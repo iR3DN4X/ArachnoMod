@@ -1,0 +1,94 @@
+// ArachnoMod - MinecraftForge 1.20.1 backport of the NeoForge 1.21.1 mod.
+// (Original: a port of TheCymaera/minecraft-spider.)
+//
+// Build:  gradlew build      -> JAR in build/libs/
+// Run:    gradlew runClient
+//
+// VERSIONS (1.20.1 predates NeoForge, so this build uses MinecraftForge + Kotlin-for-Forge 4.x):
+//   net.minecraftforge.gradle (ForgeGradle) .. [6.0,6.2)
+//   MinecraftForge ........................... 1.20.1-47.3.0
+//   thedarkcolour:kotlinforforge ............. 4.12.0     (the FORGE line, not -neoforge)
+//   Kotlin Gradle plugin ..................... 2.2.21     (must be >= the Kotlin KFF 4.12.0
+//                                                           bundles, which is 2.2.21, or K2 crashes)
+//   Java ..................................... 17         (Minecraft 1.20.1 targets Java 17)
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.jetbrains.kotlin.jvm' version '2.2.21'
+}
+
+group = 'com.heledron'
+version = '1.1.1'
+
+base {
+    archivesName = 'arachnomod_forge_1.20.1'
+}
+
+// Minecraft 1.20.1 runs on Java 17. Gradle will auto-provision a JDK 17 toolchain (foojay
+// resolver, configured in settings.gradle) if one isn't installed.
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    // Same Access Transformer as the 1.21.1 version (widens the private Display setters). Forge
+    // also auto-applies it at runtime from META-INF/accesstransformer.cfg inside the jar.
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'info'
+            mods {
+                arachnomod {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'info'
+            mods {
+                arachnomod {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    // Kotlin for Forge
+    maven { url = 'https://thedarkcolour.github.io/KotlinForForge/' }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.3.0'
+
+    // Kotlin for Forge 4.x is the MinecraftForge (non-NeoForge) line that supports 1.20.1. It
+    // brings the Kotlin stdlib + the "kotlinforforge" language loader that lets the @Mod
+    // entrypoint be a Kotlin `object`.
+    implementation 'thedarkcolour:kotlinforforge:4.12.0'
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+// Mark the jar as a MOD for the FML/kotlinforforge language loader.
+jar {
+    archiveVersion = project.version   // -> arachnomod_forge_1.20.1-1.0.2.jar
+    manifest {
+        attributes([
+            'FMLModType': 'MOD'
+        ])
+    }
+}
+

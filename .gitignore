@@ -1,0 +1,24 @@
+# Build outputs
+build/
+out/
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.properties
+
+# Dev-client runtime (worlds, logs, caches)
+run/
+runs/
+logs/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Kotlin compiler session data
+.kotlin/

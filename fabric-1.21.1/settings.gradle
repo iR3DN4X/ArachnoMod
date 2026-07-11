@@ -1,0 +1,13 @@
+pluginManagement {
+    repositories {
+        // Fabric Loom + Fabric plugins
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'arachnomod'

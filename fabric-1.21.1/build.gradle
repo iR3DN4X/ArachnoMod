@@ -1,0 +1,83 @@
+// ArachnoMod - Fabric 1.21.1 port of TheCymaera/minecraft-spider
+//
+// Build:  gradle build      -> JAR appears in build/libs/
+// Run:    gradle runClient  (singleplayer dev client)
+//
+// NOTE ON VERSIONS (Fabric toolchain for 1.21.1):
+//   fabric-loom ................... 1.8-SNAPSHOT   (supports MC 1.21.1)
+//   Minecraft ..................... 1.21.1
+//   Mappings ...................... official Mojang mappings (so the shared engine source,
+//                                    which uses official names, compiles UNCHANGED vs NeoForge)
+//   fabric-loader ................. 0.16.9
+//   fabric-api .................... 0.116.0+1.21.1
+//   fabric-language-kotlin ........ 1.12.3+kotlin.2.0.21  (lets the entrypoints be Kotlin objects
+//                                    and provides the Kotlin stdlib at runtime)
+//   Kotlin Gradle plugin .......... 2.0.21  (MUST match the Kotlin that FLK bundles, exactly the
+//                                    same lesson as KotlinForForge: a mismatched compiler cannot
+//                                    read FLK's class metadata)
+//
+// Config lib: night-config (com.electronwill) is the same TOML library NeoForge's ModConfigSpec
+// is built on. We bundle it via Loom `include` (jar-in-jar) so the mod keeps its commented,
+// hot-reloading config/arachnomod-common.toml with zero external dependencies for the user.
+
+plugins {
+    id 'fabric-loom' version '1.8-SNAPSHOT'
+    id 'org.jetbrains.kotlin.jvm' version '2.0.21'
+    id 'java'
+}
+
+group = 'com.heledron'
+version = '1.1.1'
+
+base {
+    archivesName = 'arachnomod_fabric_1.21.1'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+loom {
+    // Access widener: Fabric's equivalent of the NeoForge access transformer. Widens the private
+    // Display setters we drive from server code (see src/main/resources/arachnomod.accesswidener).
+    accessWidenerPath = file('src/main/resources/arachnomod.accesswidener')
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.1'
+    // Official Mojang mappings -> the shared spider engine compiles with no name changes.
+    mappings loom.officialMojangMappings()
+
+    modImplementation 'net.fabricmc:fabric-loader:0.16.9'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.0+1.21.1'
+    modImplementation 'net.fabricmc:fabric-language-kotlin:1.12.3+kotlin.2.0.21'
+
+    // night-config on the compile/runtime classpath AND bundled into the jar (jar-in-jar).
+    implementation 'com.electronwill.night-config:core:3.6.7'
+    implementation 'com.electronwill.night-config:toml:3.6.7'
+    include 'com.electronwill.night-config:core:3.6.7'
+    include 'com.electronwill.night-config:toml:3.6.7'
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version
+    }
+}

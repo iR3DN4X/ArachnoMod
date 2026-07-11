@@ -1,0 +1,15 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        // ForgeGradle plugin + Forge artifacts
+        maven { url = 'https://maven.minecraftforge.net/' }
+        mavenCentral()
+    }
+}
+
+plugins {
+    // Lets Gradle auto-provision a JDK 17 toolchain if one isn't installed (MC 1.20.1 needs Java 17).
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'arachnomod'

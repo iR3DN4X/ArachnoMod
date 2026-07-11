@@ -1,0 +1,83 @@
+// ArachnoMod - NeoForge 1.21.1 port of TheCymaera/minecraft-spider
+//
+// Build:  ./gradlew build      -> JAR appears in build/libs/
+// Run:    ./gradlew runClient  (singleplayer dev client)
+//
+// NOTE ON VERSIONS (verified against current releases):
+//   net.neoforged.moddev plugin .... 2.0.141  (latest 2.0.x)
+//   NeoForge ...................... 21.1.219  (a recent 1.21.1 / 21.1.x build)
+//   KotlinForForge ................ 5.11.0    (5.x line is the one for 1.21.1)
+//   Kotlin Gradle plugin .......... 2.2.20    (see compatibility note below)
+//   Gradle wrapper ................ 8.10.2    (see gradle/wrapper/gradle-wrapper.properties)
+//
+// Compatibility note: the Kotlin COMPILER must be at least as new as the Kotlin that KFF was
+// built with. KFF 5.11.0 ships a newer Kotlin (>= 2.1.20), so a 2.0.21 compiler cannot read its
+// class metadata and crashes (K2 "incompatible class" internal compiler error). 2.2.20 is the
+// version KFF's own setup docs recommend. 2.2.20 supports Gradle 8.10.2 and runs on JDK 21.
+// If you bump NeoForge, just pick any newer 21.1.x from
+// https://projects.neoforged.net/neoforged/neoforge .
+
+plugins {
+    id 'java'
+    id 'org.jetbrains.kotlin.jvm' version '2.2.20'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+group = 'com.heledron'
+version = '1.1.1'
+
+base {
+    archivesName = 'arachnomod_neoforge_1.21.1'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+    mavenCentral()
+    // KotlinForForge
+    maven { url = 'https://thedarkcolour.github.io/KotlinForForge/' }
+}
+
+neoForge {
+    // The 1.21.1 NeoForge version.
+    version = '21.1.219'
+
+    // Access Transformer: the file lives at the DEFAULT path
+    // (src/main/resources/META-INF/accesstransformer.cfg), so ModDevGradle picks it up
+    // automatically for compilation. Do NOT set the `accessTransformers` property to a list of
+    // strings — that overrides auto-detection and breaks compile-time AT application. (If you
+    // ever add an AT at a non-default path, use:  accessTransformers.from('path/to/file.cfg') )
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+    }
+
+    mods {
+        arachnomod {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+dependencies {
+    // KotlinForForge brings the Kotlin stdlib + the "kotlinforforge" language loader
+    // that lets the @Mod entrypoint be a Kotlin `object`.
+    implementation 'thedarkcolour:kotlinforforge-neoforge:5.11.0'
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+    }
+}

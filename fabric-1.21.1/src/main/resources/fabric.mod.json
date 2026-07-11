@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "arachnomod",
+  "version": "${version}",
+  "name": "ArachnoMod (Spider Animation)",
+  "description": "A giant, procedurally-animated spider that stalks players. One roams the world at a time, respawning every 5-30 minutes. It hunts the nearest player within 64 blocks - towering over the trees and charging in at incredible speed the further away you are, then shrinking down as it closes in for a 6-heart bite. Built on FABRIK inverse-kinematics legs drawn with vanilla BlockDisplay entities. Created by iR3DN4X. Based on TheCymaera/minecraft-spider.",
+  "authors": [ "iR3DN4X" ],
+  "contact": {
+    "sources": "https://github.com/TheCymaera/minecraft-spider"
+  },
+  "license": "Source-available custom license (free to play; no commercial reuse, no ports, no rehosting) - see LICENSE.md in this jar. Derivative of TheCymaera/minecraft-spider by Heledron, used with attribution.",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "kotlin",
+        "value": "com.heledron.spideranimation.SpiderAnimationMod"
+      }
+    ],
+    "client": [
+      {
+        "adapter": "kotlin",
+        "value": "com.heledron.spideranimation.entity.ArachnoClient"
+      }
+    ]
+  },
+  "accessWidener": "arachnomod.accesswidener",
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "fabric-language-kotlin": ">=1.12.0"
+  }
+}

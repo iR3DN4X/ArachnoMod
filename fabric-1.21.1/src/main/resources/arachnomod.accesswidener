@@ -1,0 +1,18 @@
+accessWidener v2 named
+
+# Access widener for ArachnoMod (Fabric 1.21.1, official Mojang mappings).
+#
+# The Display entity stores its transform / interpolation / block-state in PRIVATE setters that
+# write SynchedEntityData. We drive these displays from server code (not from a /summon NBT blob
+# like the original plugin did), so we widen them to public. This is the Fabric equivalent of the
+# NeoForge port's META-INF/accesstransformer.cfg -- same five methods, access-widener syntax.
+
+accessible method net/minecraft/world/entity/Display setTransformation (Lcom/mojang/math/Transformation;)V
+accessible method net/minecraft/world/entity/Display$BlockDisplay setBlockState (Lnet/minecraft/world/level/block/state/BlockState;)V
+
+# Transform interpolation setters (smooth the per-tick animation, fixing the 20 Hz jitter).
+accessible method net/minecraft/world/entity/Display setTransformationInterpolationDuration (I)V
+accessible method net/minecraft/world/entity/Display setTransformationInterpolationDelay (I)V
+
+# View range setter (trailing-anchored displays must never be distance-culled while on screen).
+accessible method net/minecraft/world/entity/Display setViewRange (F)V
