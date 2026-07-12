@@ -7,8 +7,10 @@ import com.heledron.spideranimation.spider.SpiderBehaviour
 import com.heledron.spideranimation.spider.SpiderBody
 import com.heledron.spideranimation.spider.StayStillBehaviour
 import com.heledron.spideranimation.spider.TargetBehaviour
+import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import org.joml.Vector3d
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -182,9 +184,36 @@ object SpiderAI {
             val x = anchor.x + cos(angle) * dist
             val z = anchor.z + sin(angle) * dist
             val safeY = SafeGroundFinder.findSafeY(level, x, z) ?: return@repeat
-            return Vector3d(x, safeY, z)
+            val target = Vector3d(x, safeY, z)
+            // Route pre-scan: the destination being safe isn't enough — the WAY there must be too.
+            if (!isPathSafe(body.position, target, level)) return@repeat
+            return target
         }
         return null
+    }
+
+    /**
+     * Route pre-scan (contributed by NetherySiloX): before committing to a wander target, walk
+     * the straight line to it in ~1-block steps and require safe ground at every step — so a
+     * patrol route never crosses a ravine, cliff gap, or water. Greatly reduces wander falls.
+     */
+    private fun isPathSafe(start: Vector3d, end: Vector3d, level: ServerLevel): Boolean {
+        val dx = end.x - start.x
+        val dz = end.z - start.z
+        val distance = sqrt(dx * dx + dz * dz)
+        if (distance < 1.0) return true
+
+        val steps = ceil(distance).toInt()
+        val stepX = dx / steps
+        val stepZ = dz / steps
+        var x = start.x
+        var z = start.z
+        repeat(steps) {
+            x += stepX
+            z += stepZ
+            if (SafeGroundFinder.findSafeY(level, x, z) == null) return false
+        }
+        return true
     }
 
     private fun wanderSpeedFactor(body: SpiderBody): Double =

@@ -128,6 +128,10 @@ object Config {
         "Longest time the spider commits to a patrol heading before picking a new one.")
     val WANDER_PAUSE_CHANCE = define("wanderPauseChance", 0.25, 0.0, 1.0,
         "Chance (0.0-1.0) that, instead of walking somewhere new, the spider just pauses a beat.")
+    val GROOMING_CHANCE = define("groomingChance", 0.03, 0.0, 1.0,
+        "Only while wandering is DISABLED: chance PER SECOND that the idle spider grooms -",
+        "lifting its front legs to its mouth and cleaning them (0.03 = 3%/sec). 0 turns it off.",
+        "The idle spider also breathes (a gentle body bob) whenever wandering is disabled.")
 
     // ---- Size & growth ---------------------------------------------------------------------
     val MIN_SIZE = define("minSize", 0.6, 0.1, 10.0,

@@ -1,5 +1,6 @@
 package com.heledron.spideranimation.spider
 
+import com.heledron.spideranimation.Config
 import com.heledron.spideranimation.ecs.Ecs
 import com.heledron.spideranimation.ecs.EcsEntity
 import com.heledron.spideranimation.platform.isOnGround
@@ -13,8 +14,12 @@ import org.joml.Vector2d
 import org.joml.Vector3d
 import org.joml.Vector3f
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 class SpiderBodyHitGroundEvent(val spider: SpiderBody)
 
@@ -57,6 +62,12 @@ class SpiderBody(
     // always keeps its iconic netherite step/fall sounds; other variants use the configurable
     // variant sounds (see the LegStepEvent handler in AppState).
     var variantKey = "netherite"
+
+    // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
+    private var stationaryTimer = 0
+    private var groomingTimer = 0
+    private val groomingOriginalPos0 = Vector3d()
+    private val groomingOriginalPos1 = Vector3d()
 
     // The spider's current absolute physical size (1.0 = as spawned). Driven by SpiderMob from the
     // nearest player's distance (close = small, far = large). Scales the body plan + gait so the IK
@@ -297,7 +308,115 @@ class SpiderBody(
         for (leg in updateOrder) leg.updateMemo()
         for (leg in updateOrder) leg.update()
 
+        // Idle grooming overrides the front legs' pose, so it must run AFTER the leg updates.
+        updateGrooming()
+
         updatePreferredAngles()
+    }
+
+    // ---- Idle grooming (contributed by NetherySiloX; completed & integrated here) ------------
+    // Only while wandering is DISABLED: once the spider has stood still for 3 seconds, a
+    // per-second chance (Config.GROOMING_CHANCE) starts a 5-second sequence — the front leg pair
+    // lifts to the mouth and "cleans" with a smooth sweeping rub (opposite phases per leg, eased
+    // in/out), while calcPreferredY leans the body down. The legs are flagged isDisabled so the
+    // gait leaves them alone, and the ease returns them to their stored ground positions before
+    // the flag is lifted — no snap at either end.
+    private fun updateGrooming() {
+        val speedSq = velocity.lengthSquared()
+
+        if (!Config.ENABLE_WANDERING.get()) {
+            if (speedSq < 0.001) {
+                stationaryTimer++
+                if (groomingTimer <= 0 && stationaryTimer > 60) {   // still for 3s before considering it
+                    val chancePerTick = Config.GROOMING_CHANCE.get() / 20.0
+                    if (chancePerTick > 0 && Random.nextDouble() < chancePerTick) beginGrooming()
+                }
+            } else {
+                stationaryTimer = 0
+                // Real movement interrupts grooming; tiny physics jitter (< 0.01 sq) does not.
+                if (speedSq > 0.01 && groomingTimer > 0) cancelGrooming()
+            }
+        } else {
+            stationaryTimer = 0
+            if (groomingTimer > 0) cancelGrooming()
+        }
+
+        if (groomingTimer <= 0) return
+        val leg0 = legs.getOrNull(0)
+        val leg1 = legs.getOrNull(1)
+        if (leg0 == null || leg1 == null) { cancelGrooming(); return }
+
+        val progress = 1.0 - groomingTimer / 100.0
+        val smoothT = groomingSmoothT()
+
+        val forward = FORWARD_VECTOR.rotate(Quaterniond(orientation))
+        val up = UP_VECTOR.rotate(Quaterniond(orientation))
+        val right = forward.cross(up, Vector3d()).normalize()
+
+        // The "mouth": just in front of and slightly below the body centre.
+        val mouthPos = position.copy()
+            .add(forward.copy().mul(0.5 * sizeScale))
+            .add(up.copy().mul(-0.05 * sizeScale))
+
+        // Rub only through the middle of the sequence (fades in after the lift, out before the return).
+        val rubIntensity = when {
+            progress < 0.2 || progress > 0.8 -> 0.0
+            progress < 0.3 -> (progress - 0.2) / 0.1
+            progress > 0.7 -> (0.8 - progress) / 0.1
+            else -> 1.0
+        }
+
+        for (i in 0..1) {
+            val leg = if (i == 0) leg0 else leg1
+            val originalPos = if (i == 0) groomingOriginalPos0 else groomingOriginalPos1
+            val sideDir = if (i == 0) 1.0 else -1.0   // legs[0] = front-right, legs[1] = front-left
+
+            val targetPos = mouthPos.copy().add(right.copy().mul(0.15 * sideDir * sizeScale))
+
+            if (rubIntensity > 0.0) {
+                // Smooth, deliberate sweeping motion: 3 full cycles, opposite phase per leg.
+                val rubPhase = progress * Math.PI * 6.0 + if (i == 0) 0.0 else Math.PI
+                targetPos.add(up.copy().mul(sin(rubPhase) * 0.08 * sizeScale * rubIntensity))
+                targetPos.add(forward.copy().mul(cos(rubPhase) * 0.04 * sizeScale * rubIntensity))
+            }
+
+            // Arc from the stored ground position up to the mouth; smoothT eases back to 0 at the
+            // end, so the same lerp carries the leg home. The renderer re-solves the leg chain
+            // from endEffector every pass, so steering the end effector is all that's needed.
+            val arcHeight = sin(smoothT * Math.PI) * 0.4 * sizeScale
+            leg.endEffector.set(originalPos.copy().lerp(targetPos, smoothT).add(up.copy().mul(arcHeight)))
+        }
+
+        groomingTimer--
+        if (groomingTimer == 0) cancelGrooming()
+    }
+
+    /** Smoothstep envelope for the grooming sequence: eases in over the first 20%, holds, eases out. */
+    private fun groomingSmoothT(): Double {
+        val progress = 1.0 - groomingTimer / 100.0
+        val lerpFactor = when {
+            progress < 0.2 -> progress / 0.2
+            progress > 0.8 -> (1.0 - progress) / 0.2
+            else -> 1.0
+        }
+        return lerpFactor * lerpFactor * (3 - 2 * lerpFactor)
+    }
+
+    private fun beginGrooming() {
+        val leg0 = legs.getOrNull(0) ?: return
+        val leg1 = legs.getOrNull(1) ?: return
+        if (leg0.isMoving || leg1.isMoving) return   // wait for a tick when both feet are planted
+        groomingTimer = 100   // 5 seconds
+        leg0.isDisabled = true
+        leg1.isDisabled = true
+        groomingOriginalPos0.set(leg0.endEffector)
+        groomingOriginalPos1.set(leg1.endEffector)
+    }
+
+    private fun cancelGrooming() {
+        legs.getOrNull(0)?.isDisabled = false
+        legs.getOrNull(1)?.isDisabled = false
+        groomingTimer = 0
     }
 
     private fun legsInPolygonalOrder(): List<Int> {
@@ -315,7 +434,21 @@ class SpiderBody(
 
         val pivot = gait.legChainPivotMode.get(this)
         val target = UP_VECTOR.rotate(pivot).multiply(gait.maxBodyDistanceFromGround)
-        val targetY = max(averageY, groundY + target.y)
+        var targetY = max(averageY, groundY + target.y)
+
+        // ---- Idle breathing + grooming lean (contributed by NetherySiloX; only while wandering
+        // is DISABLED, and blended out as soon as the spider actually moves) -------------------
+        if (!Config.ENABLE_WANDERING.get()) {
+            val horizontalSpeed = sqrt(velocity.x * velocity.x + velocity.z * velocity.z)
+            val breathingFactor = (1.0 - horizontalSpeed / 0.05).coerceIn(0.0, 1.0)
+            if (breathingFactor > 0.0) {
+                // ~4.5 s per breath cycle; depth scales with the spider's size.
+                targetY += sin(level.gameTime * 0.07) * 0.08 * sizeScale * breathingFactor
+            }
+            // Lean the body down toward the front legs while grooming.
+            if (groomingTimer > 0) targetY -= groomingSmoothT() * 0.15 * sizeScale
+        }
+
         return position.y.lerp(targetY, gait.bodyHeightCorrectionFactor)
     }
 
