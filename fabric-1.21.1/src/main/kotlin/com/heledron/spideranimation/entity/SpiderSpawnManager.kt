@@ -30,12 +30,18 @@ object SpiderSpawnManager {
     // Spawn timing and distance come from config/arachnomod-common.toml (see Config).
     private const val RETRY_TICKS = 10 * 20             // re-try 10s later if a spawn attempt fails
 
-    /** Random respawn delay in ticks from the configured min/max minutes. */
+    /** Random FIRST-spawn delay in ticks from the configured min/max minutes (world load only —
+     *  respawns after a kill use the flat respawnAfterKillMinutes instead). */
     private fun rollRespawnDelay(): Int {
         val minTicks = (Config.SPAWN_MIN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
         val maxTicks = (Config.SPAWN_MAX_MINUTES.get() * 1200.0).toInt().coerceAtLeast(minTicks)
         return minTicks + Random.nextInt(maxTicks - minTicks + 1)
     }
+
+    /** The long post-kill cooldown (default 40 min = 2 Minecraft days): slaying the spider buys
+     *  real peace — it must never feel like a respawn treadmill. */
+    private fun killRespawnTicks(): Int =
+        (Config.RESPAWN_AFTER_KILL_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
 
     private var current: SpiderMob? = null
     private var respawnTimer = -1   // ticks until next spawn; < 0 = not yet scheduled
@@ -89,22 +95,28 @@ object SpiderSpawnManager {
                 relocateNear(server, cur)
                 return
             }
-            // Killed / discarded: fall through to the normal 5–30 minute respawn timer.
-            respawnTimer = -1
+            // Killed / discarded: the trophy hunt is over — schedule the LONG post-kill cooldown
+            // (default 40 min = 2 Minecraft days). Exception: if we were just in Peaceful, this
+            // "discard" was the peaceful despawn, not a kill — leave it to the fast timer below.
+            respawnTimer = if (pendingPeacefulExit) -1 else killRespawnTicks()
         }
 
         val players = server.playerList.players
         if (players.isEmpty()) return   // no one to spawn near; pause the timer
 
-        // Peaceful was just switched off: the spider returns PROMPTLY (default 1 minute),
-        // overriding any leftover long countdown — peace has a price.
+        // Peaceful was just switched off. Fast-track (default 1 minute) ONLY when nothing is
+        // already scheduled — i.e. the spider vanished because of Peaceful itself. A spider
+        // KILLED before peace keeps its long cooldown: toggling Peaceful must never shortcut it.
         if (pendingPeacefulExit) {
             pendingPeacefulExit = false
-            respawnTimer = (Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
-            return
+            if (respawnTimer < 0) {
+                respawnTimer = (Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
+                return
+            }
         }
 
         if (respawnTimer < 0) {
+            // No spider has existed yet this session (world load / reset): the FIRST-spawn roll.
             respawnTimer = rollRespawnDelay()
             return
         }

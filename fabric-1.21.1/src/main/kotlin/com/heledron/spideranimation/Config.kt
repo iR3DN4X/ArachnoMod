@@ -108,7 +108,11 @@ object Config {
         comment("Maximum minutes before a spider spawns. The actual delay is random between min and max."))
     val PEACEFUL_EXIT_SPAWN_MINUTES = DoubleValue("peacefulExitSpawnMinutes", 1.0, 0.05, 1440.0,
         comment("Minutes until the spider spawns after Peaceful difficulty is switched OFF.",
-                "Overrides the normal spawnMin/spawnMax wait for that first return - peace has a price."))
+                "Only applies when Peaceful itself removed the spider - a killed spider keeps its",
+                "respawnAfterKillMinutes cooldown (toggling Peaceful can't shortcut it)."))
+    val RESPAWN_AFTER_KILL_MINUTES = DoubleValue("respawnAfterKillMinutes", 40.0, 0.05, 1440.0,
+        comment("Minutes until the next spider after one is KILLED (40 = 2 Minecraft days).",
+                "Slaying it buys real peace; spawnMin/spawnMax only govern the FIRST spawn."))
     val SPAWN_DISTANCE_MIN = DoubleValue("spawnDistanceMin", 30.0, 4.0, 128.0,
         comment("Closest distance (blocks) from a player that a spider may naturally spawn."))
     val SPAWN_DISTANCE_MAX = DoubleValue("spawnDistanceMax", 34.0, 4.0, 128.0,

@@ -1,6 +1,6 @@
 # ArachnoMod — the Netherite Octoarachnopod
 
-**A giant, procedurally-animated spider that hunts you across the world.** One roams at a time, respawning every 5–30 minutes. It towers over the trees and charges in at incredible speed the farther away you are, then shrinks down as it closes for a **6-heart bite**. Its eight legs are driven by real **FABRIK inverse-kinematics**, drawn entirely with vanilla **BlockDisplay** entities — so it walks, scurries, and clambers like nothing else in Minecraft.
+**A giant, procedurally-animated spider that hunts you across the world.** One roams at a time, returning two Minecraft days after each defeat. It towers over the trees and charges in at incredible speed the farther away you are, then shrinks down as it closes for a **6-heart bite**. Its eight legs are driven by real **FABRIK inverse-kinematics**, drawn entirely with vanilla **BlockDisplay** entities — so it walks, scurries, and clambers like nothing else in Minecraft.
 
 Built on **1000 HP** of boss-grade menace. Kill it and it *might* just drop the netherite it's made of.
 
@@ -71,8 +71,8 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 
 | Key | Default | Meaning |
 |---|---|---|
-| `spawnMinMinutes` | 5.0 | Min minutes before a spider spawns |
-| `spawnMaxMinutes` | 30.0 | Max minutes before a spider spawns (delay is random between the two) |
+| `spawnMinMinutes` | 5.0 | Min minutes before the FIRST spider of a session spawns |
+| `spawnMaxMinutes` | 30.0 | Max minutes before the FIRST spawn (random between the two); after a kill see respawnAfterKillMinutes |
 | `spawnDistanceMin` | 30.0 | Closest a spider naturally spawns from a player (blocks) |
 | `spawnDistanceMax` | 34.0 | Farthest a spider naturally spawns from a player (blocks) |
 | `chaseDistance` | 64.0 | How far the spider spots & chases players (blocks) |
@@ -95,7 +95,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 
 | Key | Default | Meaning |
 |---|---|---|
-| `spawnAngleAttempts` | 12 | Directions tested per candidate distance when hunting safe spawn ground |
+| `spawnAngleAttempts` | 24 | Directions tested per candidate distance when hunting safe spawn ground |
 | `spawnMaxVerticalSearch` | 48 | How deep below the heightmap to look for solid ground (SkyBlock-friendly) |
 | `camoVariantChance` | 0.25 | Chance a spawned spider is the CAMO variant (natural spawns AND spawn eggs) |
 | `chaseExitDistanceMultiplier` | 1.25 | Give-up radius = chaseDistance × this (prevents boundary flicker) |
@@ -146,7 +146,11 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.4 (latest) — all three loaders
+### v1.1.5 (latest) — all three loaders
+- **Slaying the spider now buys you real peace: the next one comes 40 minutes later — two full Minecraft days** (new `respawnAfterKillMinutes`, default 40). No more respawn treadmill. The 5–30 minute `spawnMin/spawnMax` roll now governs only the **first** spawn of a session, preserving that first-encounter suspense.
+- The 1-minute post-Peaceful return only applies when Peaceful itself removed the spider — **toggling Peaceful can no longer shortcut the post-kill cooldown.**
+
+### v1.1.4 — all three loaders
 - **Peace has a price: the spider now returns 1 minute after Peaceful difficulty is switched off** (was: a fresh 5–30 minute roll). Configurable via the new `peacefulExitSpawnMinutes` key.
 - **More reliable spawning in rough terrain** *(thanks NetherySiloX for the report)*: the default `spawnAngleAttempts` is now **24** (was 12) — the spawner tests twice as many directions for safe ground, fixing "spider never shows up" in dense forests, snowy peaks, and cliffside terrain. **If you have an existing config file, raise `spawnAngleAttempts` to 24 yourself** (or delete the key and let it regenerate) — saved configs keep their old value.
 
