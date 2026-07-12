@@ -186,7 +186,10 @@ object SpiderAI {
             val safeY = SafeGroundFinder.findSafeY(level, x, z) ?: return@repeat
             val target = Vector3d(x, safeY, z)
             // Route pre-scan: the destination being safe isn't enough — the WAY there must be too.
-            if (!isPathSafe(body.position, target, level)) return@repeat
+            // A comfortable step-down scales with the spider (a giant strides off ledges a small
+            // one would tumble from); climbs UP are never rejected — climbing is what spiders do.
+            val maxDrop = (body.walkGait.stationary.bodyHeight * 1.5).coerceIn(3.0, 12.0)
+            if (!isPathSafe(body.position, target, level, maxDrop)) return@repeat
             return target
         }
         return null
@@ -194,10 +197,12 @@ object SpiderAI {
 
     /**
      * Route pre-scan (contributed by NetherySiloX): before committing to a wander target, walk
-     * the straight line to it in ~1-block steps and require safe ground at every step — so a
-     * patrol route never crosses a ravine, cliff gap, or water. Greatly reduces wander falls.
+     * the straight line to it in ~1-block steps and require safe ground at every step — columns
+     * of lava, water, or open void reject the route. Additionally (the cliff-edge guard), if the
+     * ground level between consecutive steps falls away by more than [maxDrop], the route crosses
+     * a chasm lip and is rejected too. Greatly reduces wander falls.
      */
-    private fun isPathSafe(start: Vector3d, end: Vector3d, level: ServerLevel): Boolean {
+    private fun isPathSafe(start: Vector3d, end: Vector3d, level: ServerLevel, maxDrop: Double): Boolean {
         val dx = end.x - start.x
         val dz = end.z - start.z
         val distance = sqrt(dx * dx + dz * dz)
@@ -208,10 +213,14 @@ object SpiderAI {
         val stepZ = dz / steps
         var x = start.x
         var z = start.z
+        var prevGroundY = SafeGroundFinder.findSafeY(level, start.x, start.z)
         repeat(steps) {
             x += stepX
             z += stepZ
-            if (SafeGroundFinder.findSafeY(level, x, z) == null) return false
+            val groundY = SafeGroundFinder.findSafeY(level, x, z) ?: return false
+            val last = prevGroundY
+            if (last != null && last - groundY > maxDrop) return false   // cliff edge ahead
+            prevGroundY = groundY
         }
         return true
     }
