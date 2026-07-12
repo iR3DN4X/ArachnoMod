@@ -292,13 +292,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
 
     override fun die(damageSource: DamageSource) {
         // Trophy drop: configurable chance of a single netherite ingot (it IS made of the stuff).
-        // Spawn it at the GROUND beneath the body centre, not at the mob position: the giant form's
-        // body rides 10-25 blocks up, and an ingot dropped from the sky lands somewhere the player
-        // will never spot under a collapsing kaiju. Ground level = where a player actually looks.
+        // Spawn it on the FLOOR directly beneath the body centre, not at the mob position: the
+        // giant form's body rides 10-25 blocks up, and an ingot dropped from the sky lands
+        // somewhere the player will never spot under a collapsing kaiju. findFloorBelow scans
+        // straight DOWN from the body (never the heightmap!), so cave and negative-Y kills drop
+        // on the cave floor — not teleported to the surface above. Void below = drop at the body.
         val level = level()
         if (level is ServerLevel && random.nextFloat() < Config.NETHERITE_DROP_CHANCE.get()) {
-            val groundY = SafeGroundFinder.findSafeY(level, x, z) ?: y
-            val trophy = ItemEntity(level, x, groundY + 0.25, z, ItemStack(Items.NETHERITE_INGOT))
+            val floorY = SafeGroundFinder.findFloorBelow(level, x, y, z) ?: y
+            val trophy = ItemEntity(level, x, floorY + 0.25, z, ItemStack(Items.NETHERITE_INGOT))
             trophy.setDefaultPickUpDelay()
             level.addFreshEntity(trophy)
         }

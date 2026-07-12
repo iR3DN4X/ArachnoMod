@@ -58,6 +58,27 @@ object SafeGroundFinder {
         return null
     }
 
+    /**
+     * The Y to place something on the FLOOR directly below (x, y, z) — scanning straight down
+     * from the given Y, NOT from the heightmap. Unlike [findSafeY] (a surface-spawning helper),
+     * this works underground: a cave kill finds the cave floor, not the mountaintop above it.
+     * Returns null only when there's nothing below within [maxDepth] blocks (open void).
+     */
+    fun findFloorBelow(level: ServerLevel, x: Double, y: Double, z: Double, maxDepth: Int = 96): Double? {
+        val blockX = floor(x).toInt()
+        val blockZ = floor(z).toInt()
+        val startY = floor(y).toInt().coerceAtMost(level.maxBuildHeight - 1)
+        val bottomLimit = (startY - maxDepth).coerceAtLeast(level.minBuildHeight)
+
+        val pos = BlockPos.MutableBlockPos()
+        for (yy in startY downTo bottomLimit) {
+            pos.set(blockX, yy, blockZ)
+            val state = level.getBlockState(pos)
+            if (!state.isAir && !state.getCollisionShape(level, pos).isEmpty) return (yy + 1).toDouble()
+        }
+        return null
+    }
+
     /** Solid enough to stand on and not a liquid: never place a spider on/in water or lava. */
     private fun isSolidDryGround(level: ServerLevel, pos: BlockPos): Boolean {
         if (!level.getFluidState(pos).isEmpty) return false

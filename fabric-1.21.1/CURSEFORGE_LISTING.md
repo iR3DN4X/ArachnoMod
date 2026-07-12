@@ -147,7 +147,7 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 ## 📜 Full changelog
 
 ### v1.1.2 (latest) — all three loaders
-- **Improved: the netherite trophy now drops at GROUND LEVEL directly beneath the spider**, instead of at its body center. Previously, killing the giant form (especially from range) dropped the ingot from 10–25 blocks up in the air, where it fell and landed somewhere easy to miss — making drops *feel* broken. Now it lands right where the spider died, at eye level. (Drop chance is unchanged — `netheriteDropChance`, default 0.5, configurable up to guaranteed.)
+- **Improved: the netherite trophy now drops on the FLOOR directly beneath the spider — at any height, any depth.** Previously, killing the giant form (especially from range) dropped the ingot from 10–25 blocks up in the air, where it fell and landed somewhere easy to miss — making drops *feel* broken. Now it lands right where the spider died: on the surface, on a cave floor, at negative Y — anywhere, anytime. (Drop chance is unchanged — `netheriteDropChance`, default 0.5, configurable up to guaranteed.)
 
 ### v1.1.1 — The Hunt Update — all three loaders
 - **NEW: Wander / Alert / Chase AI.** The spider now patrols calmly when alone, freezes and *stares at you* for a beat when it first spots you, then charges — and keeps chasing until you genuinely escape (no more flickering at the detection edge). Optional `hostileOnlyAtNight` vanilla-spider mode.
