@@ -35,14 +35,16 @@ ArachnoMod now runs on **three loaders**:
 ## 🕷️ Features
 
 - **One spider, always hunting.** Exactly one exists at a time. It wanders the world looking for the nearest player within its chase distance.
-- **🆕 Wander / Alert / Chase AI (v1.1.1).** When no one's around, the spider calmly **patrols** its territory (never strolling into water or off cliffs). The instant it spots you it **freezes and snaps to face you** — one heart-stopping beat — then **charges**. It keeps chasing until you truly escape (wider give-up radius than its detection radius, so no flickering at the boundary). Optional `hostileOnlyAtNight` mode makes it docile in daylight like a vanilla spider.
+- **🆕 Wander / Alert / Chase AI (v1.1.1, smarter in v1.1.5).** When no one's around, the spider calmly **patrols** its territory — and it **pre-scans every patrol route block-by-block** before walking it, planning around lava, water, chasms, and cliff edges instead of tumbling into them. The instant it spots you it **freezes and snaps to face you** — one heart-stopping beat — then **charges**. It keeps chasing until you truly escape (wider give-up radius than its detection radius, so no flickering at the boundary). Optional `hostileOnlyAtNight` mode makes it docile in daylight like a vanilla spider.
+- **🆕 The hunt has pacing (v1.1.5).** The first spider arrives **about a minute into a session** — no long wait for the main event. **Slay it and you've earned two full Minecraft days (40 min) of real peace** — no respawn treadmill. And if you hide in Peaceful? It returns **one minute after peace ends**. Peace has a price. 😈 (All three timers configurable.)
+- **🆕 Idle life (v1.1.5).** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the thousand-HP murder kaiju is, briefly, adorable.
 - **🆕 The CAMO variant (v1.1.1).** A second spider that can naturally spawn (25% by default, still only ONE spider ever) with **ACTIVE CAMOUFLAGE**: every leg continuously repaints itself as **the actual block it's standing on** — grass legs in the meadow, sand legs on the beach, stone legs in the mountains, changing leg-by-leg as it walks. Its footsteps play **the real step sound of the block underfoot**, exactly like player footsteps — it crunches on gravel, thuds on dirt, and goes whisper-quiet on wool. You won't see it coming. You might not hear it either.
 - **🆕 Safe spawning (v1.1.1).** Spawns (and patrol routes) are validated for solid, dry ground — no more spiders in the void, over oceans, or inside SkyBlock gaps. Keeps the configured spawn distance whenever possible, preferring farther over closer; never pops up in your face.
 - **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 - **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
 - **Charges faster the farther it is** — up to **8× speed** — so distance is no safety.
 - **Boss-grade fight.** 1000 HP and a 6-heart melee hit. Bring friends.
-- **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff).
+- **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff) — and since v1.1.2 the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
 - **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
 - **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
 - **Fully configurable & hot-reloading.** Every gameplay number lives in a commented config file you can edit live (see Configuration).
@@ -61,7 +63,7 @@ All under `/spider`:
 | `/spider release` | Dismisses your personal spider. | Anyone |
 | `/spider chasedistance <blocks>` | Sets how far (8–256) the **wild** spider spots and chases players. **Saves into the config file.** | Ops (permission level 2) |
 | 🆕 `/spider config <key> get` | Shows any config value in chat. | Ops (permission level 2) |
-| 🆕 `/spider config <key> set <value>` | **Live-edits ANY of the 35 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
+| 🆕 `/spider config <key> set <value>` | **Live-edits ANY of the 38 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
 
 ---
 
@@ -90,6 +92,14 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | `attackDamageHearts` | 6.0 | Melee damage in hearts per hit |
 | `attackCooldownTicks` | 20 | Ticks between melee hits (20 = 1/sec) |
 | `netheriteDropChance` | 0.5 | Chance to drop a netherite ingot on death |
+
+**🆕 New in v1.1.3–v1.1.5** (every key editable in-game via `/spider config`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `respawnAfterKillMinutes` | 40.0 | Cooldown after the spider is KILLED (40 = 2 Minecraft days of earned peace) |
+| `peacefulExitSpawnMinutes` | 1.0 | The spider returns this many minutes after Peaceful is switched off 😈 |
+| `groomingChance` | 0.03 | Chance per second that the idle spider grooms (wandering disabled; 0 = off) |
 
 **🆕 New in v1.1.1** (16 more keys — every one editable in-game via `/spider config`):
 
@@ -146,7 +156,8 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.5 (latest) — all three loaders — new spawn pacing
+### v1.1.5 (latest) — "The Hunt Has Pacing" — all three loaders
+*This release bundles v1.1.2–v1.1.4 (listed below) — if you're updating from v1.1.1, everything from here down to the v1.1.1 entry is new for you.*
 - **The hunt begins one minute in.** The first spider of a session now spawns after ~1 minute (was 5–30) — new players meet the mod immediately. (`spawnMinMinutes`/`spawnMaxMinutes`, both default 1, raise them if you prefer slow-burn suspense.)
 - **Slaying the spider buys you real peace: the next one comes 40 minutes later — two full Minecraft days** (new `respawnAfterKillMinutes`, default 40). No respawn treadmill; killing it means something.
 - **Turning off Peaceful is punished promptly 😈** — the spider returns 1 minute after peace ends (`peacefulExitSpawnMinutes`). But toggling Peaceful can **not** shortcut the post-kill cooldown — a slain spider stays gone for its full two days.
