@@ -55,18 +55,27 @@ object SpiderSpawnManager {
     fun reset() {
         current = null
         respawnTimer = -1
+        pendingPeacefulExit = false
     }
+
+    // Set while the difficulty is Peaceful: the moment peace ends, the hunt resumes on the SHORT
+    // post-peaceful timer (peacefulExitSpawnMinutes, default 1 min) instead of the 5-30 min roll.
+    private var pendingPeacefulExit = false
 
     fun tick(server: MinecraftServer) {
         // Peaceful: monsters don't exist. The mob itself despawns via the vanilla peaceful check;
         // here we pause natural spawning too, so it doesn't churn spawn/despawn cycles.
-        if (server.worldData.difficulty == Difficulty.PEACEFUL) return
+        if (server.worldData.difficulty == Difficulty.PEACEFUL) {
+            pendingPeacefulExit = true
+            return
+        }
 
         val cur = current
 
         // A spider is loaded and alive: hold the timer, nothing to do.
         if (cur != null && !cur.isRemoved) {
             respawnTimer = -1
+            pendingPeacefulExit = false   // it survived peaceful (e.g. was unloaded); nothing owed
             return
         }
 
@@ -86,6 +95,14 @@ object SpiderSpawnManager {
 
         val players = server.playerList.players
         if (players.isEmpty()) return   // no one to spawn near; pause the timer
+
+        // Peaceful was just switched off: the spider returns PROMPTLY (default 1 minute),
+        // overriding any leftover long countdown — peace has a price.
+        if (pendingPeacefulExit) {
+            pendingPeacefulExit = false
+            respawnTimer = (Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
+            return
+        }
 
         if (respawnTimer < 0) {
             respawnTimer = rollRespawnDelay()

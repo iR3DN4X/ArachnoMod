@@ -75,13 +75,17 @@ object Config {
         "Minimum minutes before a spider spawns (after world load or the last one's death).")
     val SPAWN_MAX_MINUTES = define("spawnMaxMinutes", 30.0, 0.05, 1440.0,
         "Maximum minutes before a spider spawns. The actual delay is random between min and max.")
+    val PEACEFUL_EXIT_SPAWN_MINUTES = define("peacefulExitSpawnMinutes", 1.0, 0.05, 1440.0,
+        "Minutes until the spider spawns after Peaceful difficulty is switched OFF.",
+        "Overrides the normal spawnMin/spawnMax wait for that first return - peace has a price.")
     val SPAWN_DISTANCE_MIN = define("spawnDistanceMin", 30.0, 4.0, 128.0,
         "Closest distance (blocks) from a player that a spider may naturally spawn.")
     val SPAWN_DISTANCE_MAX = define("spawnDistanceMax", 34.0, 4.0, 128.0,
         "Farthest distance (blocks) from a player that a spider may naturally spawn.")
-    val SPAWN_ANGLE_ATTEMPTS = define("spawnAngleAttempts", 12, 4, 64,
+    val SPAWN_ANGLE_ATTEMPTS = define("spawnAngleAttempts", 24, 4, 64,
         "How many directions around the player are tested at each candidate distance when",
-        "looking for safe ground. Higher = more thorough (and slightly more work per attempt).")
+        "looking for safe ground. If the spider fails to spawn in rough terrain (dense",
+        "forest, snowy peaks, cliffs), RAISE this - more directions = more spawn spots found.")
     val SPAWN_MAX_VERTICAL_SEARCH = define("spawnMaxVerticalSearch", 48, 4, 384,
         "How many blocks downward from the surface a candidate column is scanned looking for",
         "solid, dry ground before that candidate is rejected. Keep this generous for SkyBlock",
