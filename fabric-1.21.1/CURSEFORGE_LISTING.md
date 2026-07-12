@@ -146,7 +146,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.1 — The Hunt Update (latest) — all three loaders
+### v1.1.2 (latest) — all three loaders
+- **Improved: the netherite trophy now drops at GROUND LEVEL directly beneath the spider**, instead of at its body center. Previously, killing the giant form (especially from range) dropped the ingot from 10–25 blocks up in the air, where it fell and landed somewhere easy to miss — making drops *feel* broken. Now it lands right where the spider died, at eye level. (Drop chance is unchanged — `netheriteDropChance`, default 0.5, configurable up to guaranteed.)
+
+### v1.1.1 — The Hunt Update — all three loaders
 - **NEW: Wander / Alert / Chase AI.** The spider now patrols calmly when alone, freezes and *stares at you* for a beat when it first spots you, then charges — and keeps chasing until you genuinely escape (no more flickering at the detection edge). Optional `hostileOnlyAtNight` vanilla-spider mode.
 - **NEW: The CAMO variant with active camouflage.** A mossy second spider (25% of spawns by default — still only ever ONE spider) whose legs **continuously repaint as the actual blocks it walks on**, leg by leg, and whose footsteps play **the real sound of the block underfoot** exactly like player steps. Spawn eggs roll the variant chance too.
 - **NEW: Safe spawning.** Spawn positions (and patrol targets) are verified solid, dry, and clear — never in water, lava, the void, or mid-air. Works on SkyBlock/OneBlock-style maps. Prefers the configured distance band, farther over closer.
