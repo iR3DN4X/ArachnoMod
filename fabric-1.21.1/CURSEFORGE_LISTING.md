@@ -156,7 +156,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.5 (latest) — "The Hunt Has Pacing" — all three loaders
+### v1.1.6 (latest) — all three loaders
+- **Fixed: updating from an older version now actually delivers the new spawn pacing.** Config defaults only apply to freshly generated files, so existing installs silently kept the old 5–30 minute first spawn ("the spider never shows up"). The config now **migrates itself once**: any value still at its old default is upgraded (`spawnMinMinutes` 5→1, `spawnMaxMinutes` 30→1, `spawnAngleAttempts` 12→24) — **values you customized yourself are never touched.** No action needed; just update and play.
+
+### v1.1.5 — "The Hunt Has Pacing" — all three loaders
 *This release bundles v1.1.2–v1.1.4 (listed below) — if you're updating from v1.1.1, everything from here down to the v1.1.1 entry is new for you.*
 - **The hunt begins one minute in.** The first spider of a session now spawns after ~1 minute (was 5–30) — new players meet the mod immediately. (`spawnMinMinutes`/`spawnMaxMinutes`, both default 1, raise them if you prefer slow-burn suspense.)
 - **Slaying the spider buys you real peace: the next one comes 40 minutes later — two full Minecraft days** (new `respawnAfterKillMinutes`, default 40). No respawn treadmill; killing it means something.

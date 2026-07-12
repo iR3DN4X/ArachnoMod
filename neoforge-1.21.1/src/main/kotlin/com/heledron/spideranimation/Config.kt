@@ -70,6 +70,51 @@ object Config {
         return v
     }
 
+    // ---- One-time migration of stale defaults --------------------------------------------
+    // Defaults only apply to NEWLY generated files: without this, everyone updating from an
+    // older version silently keeps the old pacing (5-30 min first spawn) and the weaker spawn
+    // search — "the spider never shows up". Runs on the RAW file BEFORE the spec loads it
+    // (call migrateConfigFile from the mod constructor, before registerConfig). Each migration
+    // upgrades a value ONLY if it still equals its OLD default — customization is never touched.
+    private const val CONFIG_VERSION = 2
+    private val MIGRATIONS: List<Triple<String, Any, Any>> = listOf(
+        Triple("spawnMinMinutes", 5.0, 1.0),     // v1.1.5: the hunt begins one minute in
+        Triple("spawnMaxMinutes", 30.0, 1.0),
+        Triple("spawnAngleAttempts", 12, 24),    // v1.1.4: reliable rough-terrain spawning
+    )
+
+    fun migrateConfigFile(configDir: java.nio.file.Path) {
+        val file = configDir.resolve("arachnomod-common.toml")
+        if (!java.nio.file.Files.exists(file)) return   // fresh install: spec creates a new file
+        val cfg = com.electronwill.nightconfig.core.file.CommentedFileConfig.builder(file)
+            .preserveInsertionOrder().build()
+        cfg.use {
+            it.load()
+            val hasContent = it.get<Any?>("spawnMinMinutes") != null
+            val fileVersion = (it.get<Any?>("configVersion") as? Number)?.toInt()
+                ?: if (hasContent) 1 else CONFIG_VERSION   // content but no version = pre-1.1.6 file
+            if (fileVersion < 2) {
+                for ((path, old, new) in MIGRATIONS) {
+                    val current = it.get<Any?>(path)
+                    val stillAtOldDefault = when (old) {
+                        is Double -> (current as? Number)?.toDouble() == old
+                        is Int -> (current as? Number)?.toInt() == old
+                        else -> current == old
+                    }
+                    if (stillAtOldDefault) it.set<Any?>(path, new)
+                }
+            }
+            it.set<Any?>("configVersion", CONFIG_VERSION)
+            it.save()
+        }
+    }
+
+    // Defined in the spec so load-correction KEEPS the version stamp (unknown keys get removed).
+    // Deliberately NOT in `entries`: it isn't a gameplay setting and gets no /spider config node.
+    val CONFIG_VERSION_VALUE: ModConfigSpec.IntValue = BUILDER
+        .comment("Internal config-format version - do not edit.")
+        .defineInRange("configVersion", CONFIG_VERSION, 1, CONFIG_VERSION)
+
     // ---- Spawning --------------------------------------------------------------------------
     val SPAWN_MIN_MINUTES = define("spawnMinMinutes", 1.0, 0.05, 1440.0,
         "Minimum minutes before the FIRST spider of a session spawns (default 1 - the hunt begins fast).")

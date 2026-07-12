@@ -79,7 +79,10 @@ object SpiderAnimationMod {
         ITEMS.registerItem("spider_tamer") { props -> Item(props.stacksTo(1)) }
 
     init {
-        // All gameplay tunables live in config/arachnomod-common.toml (see Config).
+        // All gameplay tunables live in config/arachnomod-common.toml (see Config). Migrate any
+        // stale pre-1.1.6 defaults in the RAW file first — the spec load would otherwise keep
+        // the old pacing forever (defaults only apply to newly generated files).
+        Config.migrateConfigFile(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get())
         ModLoadingContext.get().activeContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC)
 
         val modBus: IEventBus = MOD_BUS

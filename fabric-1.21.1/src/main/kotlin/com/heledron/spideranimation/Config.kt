@@ -79,9 +79,40 @@ object Config {
         fun set(value: String) = store(value)
     }
 
+    // ---- One-time migration of stale defaults --------------------------------------------
+    // Defaults only apply to NEWLY generated files: without this, everyone updating from an
+    // older version silently keeps the old pacing (5-30 min first spawn) and the weaker spawn
+    // search — "the spider never shows up". Each migration upgrades a value ONLY if it still
+    // equals its OLD default, so deliberate customization is never overwritten.
+    private const val CONFIG_VERSION = 2
+    private val MIGRATIONS: List<Triple<String, Any, Any>> = listOf(
+        Triple("spawnMinMinutes", 5.0, 1.0),     // v1.1.5: the hunt begins one minute in
+        Triple("spawnMaxMinutes", 30.0, 1.0),
+        Triple("spawnAngleAttempts", 12, 24),    // v1.1.4: reliable rough-terrain spawning
+    )
+
+    private fun migrate(cfg: CommentedFileConfig) {
+        val hasContent = cfg.get<Any?>("spawnMinMinutes") != null
+        val fileVersion = (cfg.get<Any?>("configVersion") as? Number)?.toInt()
+            ?: if (hasContent) 1 else CONFIG_VERSION   // content but no version = a pre-1.1.6 file
+        if (fileVersion < 2) {
+            for ((path, old, new) in MIGRATIONS) {
+                val current = cfg.get<Any?>(path)
+                val stillAtOldDefault = when (old) {
+                    is Double -> (current as? Number)?.toDouble() == old
+                    is Int -> (current as? Number)?.toInt() == old
+                    else -> current == old
+                }
+                if (stillAtOldDefault) cfg.set<Any?>(path, new)
+            }
+        }
+        cfg.set<Any?>("configVersion", CONFIG_VERSION)
+        cfg.setComment("configVersion", " Internal config-format version - do not edit.")
+    }
+
     /**
-     * Create/open `config/arachnomod-common.toml`, fill in any missing defaults + comments, and
-     * start watching it for live edits. Call once from the mod initializer.
+     * Create/open `config/arachnomod-common.toml`, migrate stale defaults, fill in any missing
+     * defaults + comments, and start watching it for live edits. Call once from the initializer.
      */
     fun init(configDir: Path) {
         Files.createDirectories(configDir)
@@ -96,6 +127,7 @@ object Config {
             .autoreload()  // edits to the file on disk are picked up live
             .build()
         cfg.load()
+        migrate(cfg)
         for (e in entries) e.writeDefaultAndComment(cfg)
         cfg.save()
         backing = cfg
