@@ -71,10 +71,10 @@ object Config {
     }
 
     // ---- Spawning --------------------------------------------------------------------------
-    val SPAWN_MIN_MINUTES = define("spawnMinMinutes", 5.0, 0.05, 1440.0,
-        "Minimum minutes before a spider spawns (after world load or the last one's death).")
-    val SPAWN_MAX_MINUTES = define("spawnMaxMinutes", 30.0, 0.05, 1440.0,
-        "Maximum minutes before a spider spawns. The actual delay is random between min and max.")
+    val SPAWN_MIN_MINUTES = define("spawnMinMinutes", 1.0, 0.05, 1440.0,
+        "Minimum minutes before the FIRST spider of a session spawns (default 1 - the hunt begins fast).")
+    val SPAWN_MAX_MINUTES = define("spawnMaxMinutes", 1.0, 0.05, 1440.0,
+        "Maximum minutes for the FIRST spawn (random between min and max; killed spiders use respawnAfterKillMinutes).")
     val PEACEFUL_EXIT_SPAWN_MINUTES = define("peacefulExitSpawnMinutes", 1.0, 0.05, 1440.0,
         "Minutes until the spider spawns after Peaceful difficulty is switched OFF.",
         "Only applies when Peaceful itself removed the spider - a killed spider keeps its",

@@ -71,8 +71,8 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 
 | Key | Default | Meaning |
 |---|---|---|
-| `spawnMinMinutes` | 5.0 | Min minutes before the FIRST spider of a session spawns |
-| `spawnMaxMinutes` | 30.0 | Max minutes before the FIRST spawn (random between the two); after a kill see respawnAfterKillMinutes |
+| `spawnMinMinutes` | 1.0 | Min minutes before the FIRST spider of a session spawns |
+| `spawnMaxMinutes` | 1.0 | Max minutes before the FIRST spawn (random between the two); after a kill see respawnAfterKillMinutes |
 | `spawnDistanceMin` | 30.0 | Closest a spider naturally spawns from a player (blocks) |
 | `spawnDistanceMax` | 34.0 | Farthest a spider naturally spawns from a player (blocks) |
 | `chaseDistance` | 64.0 | How far the spider spots & chases players (blocks) |
@@ -146,9 +146,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.5 (latest) — all three loaders
-- **Slaying the spider now buys you real peace: the next one comes 40 minutes later — two full Minecraft days** (new `respawnAfterKillMinutes`, default 40). No more respawn treadmill. The 5–30 minute `spawnMin/spawnMax` roll now governs only the **first** spawn of a session, preserving that first-encounter suspense.
-- The 1-minute post-Peaceful return only applies when Peaceful itself removed the spider — **toggling Peaceful can no longer shortcut the post-kill cooldown.**
+### v1.1.5 (latest) — all three loaders — new spawn pacing
+- **The hunt begins one minute in.** The first spider of a session now spawns after ~1 minute (was 5–30) — new players meet the mod immediately. (`spawnMinMinutes`/`spawnMaxMinutes`, both default 1, raise them if you prefer slow-burn suspense.)
+- **Slaying the spider buys you real peace: the next one comes 40 minutes later — two full Minecraft days** (new `respawnAfterKillMinutes`, default 40). No respawn treadmill; killing it means something.
+- **Turning off Peaceful is punished promptly 😈** — the spider returns 1 minute after peace ends (`peacefulExitSpawnMinutes`). But toggling Peaceful can **not** shortcut the post-kill cooldown — a slain spider stays gone for its full two days.
 
 ### v1.1.4 — all three loaders
 - **Peace has a price: the spider now returns 1 minute after Peaceful difficulty is switched off** (was: a fresh 5–30 minute roll). Configurable via the new `peacefulExitSpawnMinutes` key.
