@@ -297,17 +297,36 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // straight DOWN from the body (never the heightmap!), so cave and negative-Y kills drop
         // on the cave floor — not teleported to the surface above. Void below = drop at the body.
         val level = level()
-        if (level is ServerLevel && random.nextFloat() < Config.NETHERITE_DROP_CHANCE.get()) {
-            val floorY = SafeGroundFinder.findFloorBelow(level, x, y, z) ?: y
-            val trophy = ItemEntity(level, x, floorY + 0.25, z, ItemStack(Items.NETHERITE_INGOT))
-            trophy.setDefaultPickUpDelay()
-            level.addFreshEntity(trophy)
-        }
+        if (level is ServerLevel) rollTrophy(level)
         super.die(damageSource)
         cleanup()
     }
 
+    // Set once the trophy roll has happened, so die() and remove(KILLED) can never both drop.
+    private var trophyRolled = false
+
+    /**
+     * Roll the netherite trophy. Called from [die] (normal kills) AND from [remove] with
+     * KILLED — some modded "kill anything" weapons (e.g. Avaritia-style endgame swords) slay by
+     * ZEROING HEALTH directly, which skips hurt()/die() entirely: the death animation then goes
+     * straight to remove(KILLED). Without this second hook the trophy silently never dropped
+     * for such kills. Discards (peaceful despawn, only-one replacement) still never drop.
+     */
+    private fun rollTrophy(level: ServerLevel) {
+        if (trophyRolled) return
+        trophyRolled = true
+        if (random.nextFloat() >= Config.NETHERITE_DROP_CHANCE.get()) return
+        val floorY = SafeGroundFinder.findFloorBelow(level, x, y, z) ?: y
+        val trophy = ItemEntity(level, x, floorY + 0.25, z, ItemStack(Items.NETHERITE_INGOT))
+        trophy.setDefaultPickUpDelay()
+        level.addFreshEntity(trophy)
+    }
+
     override fun remove(reason: Entity.RemovalReason) {
+        // KILLED is the funnel every real death passes through, whatever weapon or mechanism
+        // caused it — roll the trophy here too in case die() was bypassed (see rollTrophy).
+        val level = level()
+        if (reason == Entity.RemovalReason.KILLED && level is ServerLevel) rollTrophy(level)
         cleanup()
         super.remove(reason)
     }
