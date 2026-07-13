@@ -156,8 +156,8 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.7 (latest) — all three loaders
-- **Fixed: the netherite trophy now drops no matter HOW the spider is killed.** Some modded "kill anything" weapons (Avaritia-style endgame swords and similar) slay mobs by zeroing their health directly, bypassing the normal death event — which silently skipped the trophy (and would skip any mob's loot). The drop is now also hooked into the removal step that *every* real death passes through, with a guard so it can never drop twice. Verified against a direct health-zeroing kill. Note: despawns (Peaceful, replacing the spider with a new egg) still intentionally drop nothing.
+### v1.1.8 (latest) — all three loaders
+- **Fixed: the netherite trophy now drops no matter HOW the spider dies.** Some modded "kill anything" weapons (Avaritia-style endgame swords and similar) slay mobs by zeroing their health directly, bypassing the normal death event — which silently skipped the trophy. The drop now fires on **any death that leaves the spider at 0 HP**, regardless of the weapon or mechanism, with a guard so it can never drop twice. Verified against a direct health-zeroing kill that skips the normal death path entirely. Despawns (Peaceful, chunk-unload, replacing the spider with a new egg) still intentionally drop nothing — the spider is still alive when those remove it. *(This is why the drop looked "broken" only in modpacks with instant-kill weapons; vanilla kills were never affected.)*
 
 ### v1.1.6 — all three loaders
 - **Fixed: updating from an older version now actually delivers the new spawn pacing.** Config defaults only apply to freshly generated files, so existing installs silently kept the old 5–30 minute first spawn ("the spider never shows up"). The config now **migrates itself once**: any value still at its old default is upgraded (`spawnMinMinutes` 5→1, `spawnMaxMinutes` 30→1, `spawnAngleAttempts` 12→24) — **values you customized yourself are never touched.** No action needed; just update and play.

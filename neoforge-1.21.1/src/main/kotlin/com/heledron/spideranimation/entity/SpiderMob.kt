@@ -323,10 +323,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     }
 
     override fun remove(reason: Entity.RemovalReason) {
-        // KILLED is the funnel every real death passes through, whatever weapon or mechanism
-        // caused it — roll the trophy here too in case die() was bypassed (see rollTrophy).
+        // Belt-and-suspenders trophy hook. A KILL always leaves the mob DEAD (health <= 0),
+        // whatever weapon or mechanism did it — including modded "kill anything" swords (e.g.
+        // Avaritia's) that zero health and bypass hurt()/die() entirely, so KILLED is not a
+        // reliable signal. Rolling on `isDeadOrDying` catches every real death; rollTrophy's
+        // trophyRolled guard means die() + this can never double-drop. Peaceful despawn,
+        // chunk-unload, and the only-one replacement all remove the mob while it is still ALIVE
+        // (health > 0), so they never drop — exactly as intended.
         val level = level()
-        if (reason == Entity.RemovalReason.KILLED && level is ServerLevel) rollTrophy(level)
+        if (level is ServerLevel && (reason == Entity.RemovalReason.KILLED || health <= 0.0f)) rollTrophy(level)
         cleanup()
         super.remove(reason)
     }

@@ -290,19 +290,6 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         body = null
     }
 
-    override fun die(damageSource: DamageSource) {
-        // Trophy drop: configurable chance of a single netherite ingot (it IS made of the stuff).
-        // Spawn it on the FLOOR directly beneath the body centre, not at the mob position: the
-        // giant form's body rides 10-25 blocks up, and an ingot dropped from the sky lands
-        // somewhere the player will never spot under a collapsing kaiju. findFloorBelow scans
-        // straight DOWN from the body (never the heightmap!), so cave and negative-Y kills drop
-        // on the cave floor — not teleported to the surface above. Void below = drop at the body.
-        val level = level()
-        if (level is ServerLevel) rollTrophy(level)
-        super.die(damageSource)
-        cleanup()
-    }
-
     // Set once the trophy roll has happened, so die() and remove(KILLED) can never both drop.
     private var trophyRolled = false
 
@@ -323,11 +310,23 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         level.addFreshEntity(trophy)
     }
 
-    override fun remove(reason: Entity.RemovalReason) {
-        // KILLED is the funnel every real death passes through, whatever weapon or mechanism
-        // caused it — roll the trophy here too in case die() was bypassed (see rollTrophy).
+    override fun die(damageSource: DamageSource) {
         val level = level()
-        if (reason == Entity.RemovalReason.KILLED && level is ServerLevel) rollTrophy(level)
+        if (level is ServerLevel) rollTrophy(level)
+        super.die(damageSource)
+        cleanup()
+    }
+
+    override fun remove(reason: Entity.RemovalReason) {
+        // Belt-and-suspenders trophy hook. A KILL always leaves the mob DEAD (health <= 0),
+        // whatever weapon or mechanism did it — including modded "kill anything" swords (e.g.
+        // Avaritia's) that zero health and bypass hurt()/die() entirely, so KILLED is not a
+        // reliable signal. Rolling on `isDeadOrDying` catches every real death; rollTrophy's
+        // trophyRolled guard means die() + this can never double-drop. Peaceful despawn,
+        // chunk-unload, and the only-one replacement all remove the mob while it is still ALIVE
+        // (health > 0), so they never drop — exactly as intended.
+        val level = level()
+        if (level is ServerLevel && (reason == Entity.RemovalReason.KILLED || health <= 0.0f)) rollTrophy(level)
         cleanup()
         super.remove(reason)
     }
