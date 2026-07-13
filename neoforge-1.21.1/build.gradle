@@ -24,7 +24,7 @@ plugins {
 }
 
 group = 'com.heledron'
-version = '1.1.8'
+version = '1.1.9'
 
 base {
     archivesName = 'arachnomod_neoforge_1.21.1'

@@ -304,8 +304,16 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         if (trophyRolled) return
         trophyRolled = true
         if (random.nextFloat() >= Config.NETHERITE_DROP_CHANCE.get()) return
-        val floorY = SafeGroundFinder.findFloorBelow(level, x, y, z) ?: y
-        val trophy = ItemEntity(level, x, floorY + 0.25, z, ItemStack(Items.NETHERITE_INGOT))
+        // Drop at the SIMULATION body position, not the invisible hitbox position. The hitbox is
+        // synced to the body only during entity-ticking, one ECS update BEHIND body.position — for
+        // a fast or giant spider (several blocks/tick) that lag dropped the trophy several blocks
+        // behind the visible spider. body.position is exactly where the spider is drawn.
+        val b = body
+        val dropX = b?.position?.x ?: x
+        val dropY = b?.position?.y ?: y
+        val dropZ = b?.position?.z ?: z
+        val floorY = SafeGroundFinder.findFloorBelow(level, dropX, dropY, dropZ) ?: dropY
+        val trophy = ItemEntity(level, dropX, floorY + 0.25, dropZ, ItemStack(Items.NETHERITE_INGOT))
         trophy.setDefaultPickUpDelay()
         level.addFreshEntity(trophy)
     }

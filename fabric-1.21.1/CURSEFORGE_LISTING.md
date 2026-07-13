@@ -156,7 +156,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.8 (latest) — all three loaders
+### v1.1.9 (latest) — all three loaders
+- **Fixed: the netherite trophy now drops right AT the spider, not several blocks behind it.** The drop was placed at the spider's (invisible) hitbox, which trails the animated body by one tick — negligible normally, but for a fast or giant spider (e.g. one one-shot mid-charge) that could put the ingot several blocks behind where you saw it die. It now drops at the exact simulation body position, always right under the spider.
+
+### v1.1.8 — all three loaders
 - **Fixed: the netherite trophy now drops no matter HOW the spider dies.** Some modded "kill anything" weapons (Avaritia-style endgame swords and similar) slay mobs by zeroing their health directly, bypassing the normal death event — which silently skipped the trophy. The drop now fires on **any death that leaves the spider at 0 HP**, regardless of the weapon or mechanism, with a guard so it can never drop twice. Verified against a direct health-zeroing kill that skips the normal death path entirely. Despawns (Peaceful, chunk-unload, replacing the spider with a new egg) still intentionally drop nothing — the spider is still alive when those remove it. *(This is why the drop looked "broken" only in modpacks with instant-kill weapons; vanilla kills were never affected.)*
 
 ### v1.1.6 — all three loaders
