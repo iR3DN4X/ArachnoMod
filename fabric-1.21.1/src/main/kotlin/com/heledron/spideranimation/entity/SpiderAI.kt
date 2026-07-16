@@ -63,6 +63,11 @@ object SpiderAI {
         val level = body.level
         val state = states.getOrPut(entity) { SpiderAIState(Vector3d(body.position)) }
 
+        // Squeeze descent target is re-asserted by tickChase every tick it applies; clearing it
+        // up front means wander/alert (and a chase that stopped squeezing) can never leave a
+        // stale "sink into the ground" order on the body.
+        body.squeezeTargetY = null
+
         var nearestPlayer = level.players().minByOrNull {
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
         }
@@ -193,14 +198,24 @@ object SpiderAI {
             if (pressureMode) 0.25
             else (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
 
-        // THE SQUEEZE: pressing directly over (or under) a hidden player, the spider shrinks to
+        // THE SQUEEZE: pressing directly over a hidden player, the spider shrinks to
         // Config.SQUEEZE_SIZE - small enough to slip into a 1x1x1 hole - and comes in after
-        // them. Only when horizontally on top of the target; while still closing in it keeps
-        // its distance-based size. SpiderMob reads this flag and drives the actual scale, and
-        // regrows the moment the squeeze ends.
+        // them. Only when horizontally on top of the target AND the player is genuinely BELOW
+        // (shrinking at the base of a pillared-up player would only shorten the bite reach);
+        // while still closing in it keeps its distance-based size. SpiderMob reads this flag
+        // and drives the actual scale, and regrows the moment the squeeze ends.
         val dx = player.x - body.position.x
         val dz = player.z - body.position.z
-        state.squeezing = pressureMode && (dx * dx + dz * dz) < 6.0 * 6.0
+        val playerBelow = groundLevelY - player.y > 2.0
+        state.squeezing = playerBelow && (dx * dx + dz * dz) < 6.0 * 6.0
+
+        // Drive the descent once the body has ACTUALLY shrunk to (near) squeeze size — gating
+        // on the real sizeScale, not the flag, so a still-big spider never rams its bulk down a
+        // hole it doesn't fit yet: the shrink runs first (~5 ticks at the shrink cap), then the
+        // body pours in. SpiderBody.calcPreferredY does the rest.
+        body.squeezeTargetY =
+            if (state.squeezing && body.sizeScale <= Config.SQUEEZE_SIZE.get() * 1.25) player.y
+            else null
 
         entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(Vector3d(player.x, player.y, player.z), arriveDistance))
     }

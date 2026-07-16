@@ -63,6 +63,13 @@ class SpiderBody(
     // variant sounds (see the LegStepEvent handler in AppState).
     var variantKey = "netherite"
 
+    // THE SQUEEZE descent: while pressing over a dug-in player at squeeze size, SpiderAI sets
+    // this to the player's Y every tick (null otherwise). calcPreferredY then aims the body at
+    // the floor of their hole instead of the leg-average height — the legs stand AROUND a 1x1
+    // hole, never in it, so without this the body hovers at the lip forever, held up by the
+    // grounded rim legs, no matter how small it shrinks.
+    var squeezeTargetY: Double? = null
+
     // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
     private var stationaryTimer = 0
     private var groomingTimer = 0
@@ -447,6 +454,22 @@ class SpiderBody(
             }
             // Lean the body down toward the front legs while grooming.
             if (groomingTimer > 0) targetY -= groomingSmoothT() * 0.15 * sizeScale
+        }
+
+        // THE SQUEEZE descent: sink toward the squeeze target instead of hovering at rim height.
+        // The straight-down raycast finds the real floor beneath the body — the hole bottom once
+        // the body crosses the opening, or the surface while still stalking up to it (so the
+        // spider presses flat against the ground, then pours down the shaft the moment it is
+        // over the lip). Standing height above that floor is the scaled bodyHeight, which at
+        // squeeze size sets the body — and the bite — right on top of the hidden player. The
+        // upward normal force only acts when preferredY is ABOVE the body, so lowering targetY
+        // both releases the rim-leg hover and engages the downward height correction.
+        val squeezeY = squeezeTargetY
+        if (squeezeY != null) {
+            val scanDistance = (position.y - squeezeY).coerceAtLeast(0.0) + 2.0
+            val floor = level.raycastGround(position, DOWN_VECTOR, scanDistance)
+            val standY = (floor?.y ?: squeezeY) + lerpedGait().bodyHeight
+            if (standY < targetY) targetY = standY
         }
 
         return position.y.lerp(targetY, gait.bodyHeightCorrectionFactor)
