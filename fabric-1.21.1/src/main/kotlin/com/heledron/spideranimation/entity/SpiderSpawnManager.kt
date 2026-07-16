@@ -2,6 +2,8 @@ package com.heledron.spideranimation.entity
 
 import com.heledron.spideranimation.Config
 import com.heledron.spideranimation.SpiderAnimationMod
+import com.heledron.spideranimation.platform.DISPLAY_TAG
+import com.heledron.spideranimation.platform.DisplayTracker
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -62,13 +64,21 @@ object SpiderSpawnManager {
         current = null
         respawnTimer = -1
         pendingPeacefulExit = false
+        abandonedTicks = 0
+        janitorTimer = 0
     }
 
     // Set while the difficulty is Peaceful: the moment peace ends, the hunt resumes on the SHORT
     // post-peaceful timer (peacefulExitSpawnMinutes, default 1 min) instead of the 5-30 min roll.
     private var pendingPeacefulExit = false
 
+    // Dimension following: ticks the live spider has spent in a dimension with NO players in it.
+    private var abandonedTicks = 0
+    private const val FOLLOW_GRACE_TICKS = 100   // 5s grace so a quick portal peek doesn't yo-yo it
+
     fun tick(server: MinecraftServer) {
+        janitorSweep(server)
+
         // Peaceful: monsters don't exist. The mob itself despawns via the vanilla peaceful check;
         // here we pause natural spawning too, so it doesn't churn spawn/despawn cycles.
         if (server.worldData.difficulty == Difficulty.PEACEFUL) {
@@ -78,12 +88,24 @@ object SpiderSpawnManager {
 
         val cur = current
 
-        // A spider is loaded and alive: hold the timer, nothing to do.
+        // A spider is loaded and alive: hold the timer, nothing to do — unless every player has
+        // left ITS dimension, in which case it FOLLOWS them (Nether, End, or any modded
+        // dimension: this keys purely on where the players are, not on how they travelled).
         if (cur != null && !cur.isRemoved) {
             respawnTimer = -1
             pendingPeacefulExit = false   // it survived peaceful (e.g. was unloaded); nothing owed
+
+            val hasCompany = cur.level().players().isNotEmpty()
+            val anyPlayers = server.playerList.players.isNotEmpty()
+            if (hasCompany || !anyPlayers) {
+                abandonedTicks = 0
+            } else if (++abandonedTicks >= FOLLOW_GRACE_TICKS) {
+                abandonedTicks = 0
+                followToPlayer(server, cur)
+            }
             return
         }
+        abandonedTicks = 0
 
         // The tracked spider left the world — figure out why.
         if (cur != null) {
@@ -130,6 +152,41 @@ object SpiderSpawnManager {
         if (players.isEmpty()) { respawnTimer = RETRY_TICKS; return }
         val nearest = players.minByOrNull { it.distanceToSqr(lastSpider.x, lastSpider.y, lastSpider.z) } ?: return
         if (!spawnNear(server, nearest)) respawnTimer = RETRY_TICKS
+    }
+
+    /**
+     * DIMENSION FOLLOWING: every player has left the spider's dimension, so it goes where the
+     * hunt is. The old body is discarded ALIVE (no trophy, and — because `current` is nulled
+     * first — no 40-minute kill cooldown either) and a fresh spider emerges near a player in
+     * whatever dimension they travelled to, through the normal safe-spawn algorithm. Keying on
+     * player location makes this work with ANY dimension: Nether, End, Twilight Forest,
+     * Dimensional Doors, anything.
+     */
+    private fun followToPlayer(server: MinecraftServer, oldSpider: SpiderMob) {
+        val players = server.playerList.players
+        if (players.isEmpty()) return
+        current = null            // detach BEFORE discarding so the removal isn't read as a kill
+        oldSpider.discard()       // alive -> no trophy (see SpiderMob.remove)
+        if (!trySpawnNear(players.random())) respawnTimer = RETRY_TICKS   // e.g. mid-lava-ocean: retry soon
+    }
+
+    // ---- Display janitor ------------------------------------------------------------------
+    // Old versions let the BlockDisplay leg entities get SAVED into chunks when a player changed
+    // dimension and the spider's chunks unloaded — reloading the area then showed frozen "corpse
+    // pile" spiders. New displays are never saved (see Platform.spawnDisplayAtVisual), and this
+    // sweep heals worlds infested by older versions: any display carrying our tag that is not in
+    // the live tracker is a leftover, in ANY dimension, and gets discarded as its chunk loads.
+    private var janitorTimer = 0
+
+    private fun janitorSweep(server: MinecraftServer) {
+        if (++janitorTimer < 200) return   // every 10s; the scan is cheap but no need to spam it
+        janitorTimer = 0
+        for (level in server.allLevels) {
+            val orphans = level.getEntities(net.minecraft.world.entity.EntityType.BLOCK_DISPLAY) {
+                it.tags.contains(DISPLAY_TAG) && !DisplayTracker.isTracked(it)
+            }
+            for (orphan in orphans) orphan.discard()
+        }
     }
 
     /** Spawn guard: refuse if any spider already exists (belt-and-suspenders for "never two"). */
@@ -197,14 +254,16 @@ object SpiderSpawnManager {
         return false   // truly nowhere safe right now; the manager retries in RETRY_TICKS
     }
 
-    /** Test [angles] evenly-spread directions (random phase) at one distance; first safe one wins. */
+    /** Test [angles] evenly-spread directions (random phase) at one distance; first safe one wins.
+     *  Dimension-aware: in ceiling'd dimensions (Nether & modded roofed dims) ground is searched
+     *  around the player's altitude instead of the (bedrock-roof) heightmap. */
     private fun findSafeSpot(level: ServerLevel, player: ServerPlayer, distance: Double, angles: Int): Triple<Double, Double, Double>? {
         val phase = Random.nextDouble() * 2.0 * PI
         repeat(angles) { i ->
             val angle = phase + (2.0 * PI / angles) * i
             val x = player.x + cos(angle) * distance
             val z = player.z + sin(angle) * distance
-            val y = SafeGroundFinder.findSafeY(level, x, z)
+            val y = SafeGroundFinder.groundYAt(level, x, z, refY = player.y)
             if (y != null) return Triple(x, y, z)
         }
         return null

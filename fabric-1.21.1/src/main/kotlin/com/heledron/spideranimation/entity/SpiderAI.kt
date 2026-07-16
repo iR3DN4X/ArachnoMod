@@ -183,7 +183,7 @@ object SpiderAI {
             val dist = Random.nextDouble() * radius
             val x = anchor.x + cos(angle) * dist
             val z = anchor.z + sin(angle) * dist
-            val safeY = SafeGroundFinder.findSafeY(level, x, z) ?: return@repeat
+            val safeY = SafeGroundFinder.groundYAt(level, x, z, refY = anchor.y) ?: return@repeat
             val target = Vector3d(x, safeY, z)
             // Route pre-scan: the destination being safe isn't enough — the WAY there must be too.
             // A comfortable step-down scales with the spider (a giant strides off ledges a small
@@ -213,11 +213,14 @@ object SpiderAI {
         val stepZ = dz / steps
         var x = start.x
         var z = start.z
-        var prevGroundY = SafeGroundFinder.findSafeY(level, start.x, start.z)
+        // Dimension-aware ground sampling: each step's reference altitude is the previous step's
+        // ground (seeded from the walk start), so the scan follows the terrain — and works under
+        // the Nether roof, where heightmap-based sampling would see only bedrock.
+        var prevGroundY = SafeGroundFinder.groundYAt(level, start.x, start.z, refY = start.y)
         repeat(steps) {
             x += stepX
             z += stepZ
-            val groundY = SafeGroundFinder.findSafeY(level, x, z) ?: return false
+            val groundY = SafeGroundFinder.groundYAt(level, x, z, refY = prevGroundY ?: start.y) ?: return false
             val last = prevGroundY
             if (last != null && last - groundY > maxDrop) return false   // cliff edge ahead
             prevGroundY = groundY

@@ -156,7 +156,12 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.1.9 (latest) — all three loaders
+### v1.2.0 (latest) — "The Dimension Update" — all three loaders
+- **Fixed (gamebreaking): dimension travel no longer leaves piles of frozen spider "corpses" behind.** The spider's leg displays could get saved into chunks when you portalled away; returning showed dozens of frozen spiders stacked at one spot. Displays are now never saved — **and a janitor sweep automatically deletes the leftover frozen piles from worlds affected by older versions** as you revisit those areas. Your infested world heals itself.
+- **NEW: the spider follows you across dimensions.** Leave it behind in the overworld and a few seconds later it re-emerges near you in the Nether, the End — **or any modded dimension** (Twilight Forest, Dimensional Doors, anything): the follow triggers on where the players are, not on which portal was used. There is still only ever ONE spider.
+- **Fixed: spawning and wandering now work correctly under the Nether roof** (and any ceiling'd modded dimension) — the ground search works around the player's altitude instead of hitting the bedrock ceiling.
+
+### v1.1.9 — all three loaders
 - **Fixed: the netherite trophy now drops right AT the spider, not several blocks behind it.** The drop was placed at the spider's (invisible) hitbox, which trails the animated body by one tick — negligible normally, but for a fast or giant spider (e.g. one one-shot mid-charge) that could put the ingot several blocks behind where you saw it die. It now drops at the exact simulation body position, always right under the spider.
 
 ### v1.1.8 — all three loaders

@@ -168,7 +168,13 @@ class RenderBlockDisplay(
     }
 
     private fun spawnDisplayAtVisual(): Display.BlockDisplay {
-        val display = Display.BlockDisplay(EntityType.BLOCK_DISPLAY, level)
+        // NEVER saved to disk: displays are pure per-tick render output. Without this override,
+        // a dimension change (player portals away, spider chunks unload mid-render) baked the
+        // displays into the chunk save — reloading the area then showed frozen "corpse pile"
+        // spiders stacked at the old spot. The mob + body respawn fresh; so must the visuals.
+        val display = object : Display.BlockDisplay(EntityType.BLOCK_DISPLAY, level) {
+            override fun shouldBeSaved() = false
+        }
         display.moveTo(position.x, position.y, position.z, 0f, 0f)
         // The visual can trail up to FORCE_RE_ANCHOR blocks from the parked entity; widen the view
         // range so the client never distance-culls the display while its visual is on screen.
@@ -227,6 +233,15 @@ object DisplayTracker {
     /** The still-overlapping previous displays for this handle (kept updated with the live visual). */
     fun retiring(handle: Any): List<Display.BlockDisplay> =
         retiring[handle]?.mapNotNull { if (it.entity.isAlive) it.entity else null } ?: emptyList()
+
+    /** True if this entity is one of OUR live displays (rendered or retiring). Anything carrying
+     *  the mod tag but NOT tracked is an orphan left by an old version — the janitor sweep in
+     *  SpiderSpawnManager discards those as their chunks load. */
+    fun isTracked(entity: net.minecraft.world.entity.Entity): Boolean {
+        for (display in rendered.values) if (display === entity) return true
+        for (list in retiring.values) for (retiree in list) if (retiree.entity === entity) return true
+        return false
+    }
 
     /** Called at the end of every render pass: discard any display not submitted this pass. */
     fun endRender() {

@@ -59,6 +59,45 @@ object SafeGroundFinder {
     }
 
     /**
+     * DIMENSION-AWARE safe ground at (x, z): in normal open-sky dimensions this is the heightmap
+     * scan of [findSafeY]; in CEILING'D dimensions (the Nether, and any modded roofed dimension)
+     * the heightmap returns the bedrock ROOF, so instead we scan for safe ground around [refY] —
+     * the altitude of whatever we care about (the player being spawned near, the wander anchor).
+     * Every caller that used to use findSafeY directly should use this with a sensible refY.
+     */
+    fun groundYAt(level: ServerLevel, x: Double, z: Double, refY: Double): Double? =
+        if (level.dimensionType().hasCeiling()) findSafeYNear(level, x, z, refY) else findSafeY(level, x, z)
+
+    /**
+     * Ceiling-dimension variant of [findSafeY]: scans DOWN from refY + 16 (catching ledges a bit
+     * above) to refY - spawnMaxVerticalSearch, using the same solid + dry + 2-blocks-clear rules.
+     * Never touches the heightmap, so the Nether's bedrock roof is irrelevant.
+     */
+    fun findSafeYNear(level: ServerLevel, x: Double, z: Double, refY: Double): Double? {
+        val blockX = floor(x).toInt()
+        val blockZ = floor(z).toInt()
+        if (!level.hasChunk(blockX shr 4, blockZ shr 4)) return null
+
+        var y = (floor(refY).toInt() + 16).coerceAtMost(level.maxBuildHeight - 2)
+        val bottomLimit = (floor(refY).toInt() - Config.SPAWN_MAX_VERTICAL_SEARCH.get())
+            .coerceAtLeast(level.minBuildHeight)
+
+        val pos = BlockPos.MutableBlockPos()
+        while (y > bottomLimit) {
+            pos.set(blockX, y, blockZ)
+            if (isSolidDryGround(level, pos)) {
+                pos.set(blockX, y + 1, blockZ)
+                val feetClear = isPassable(level, pos)
+                pos.set(blockX, y + 2, blockZ)
+                val headClear = isPassable(level, pos)
+                if (feetClear && headClear) return (y + 1).toDouble()
+            }
+            y--
+        }
+        return null
+    }
+
+    /**
      * The Y to place something on the FLOOR directly below (x, y, z) — scanning straight down
      * from the given Y, NOT from the heightmap. Unlike [findSafeY] (a surface-spawning helper),
      * this works underground: a cave kill finds the cave floor, not the mountaintop above it.
