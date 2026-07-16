@@ -156,7 +156,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.2.1 (latest) — all three loaders
+### v1.2.2 (latest) — all three loaders
+- **NEW: THE SQUEEZE.** 🕷️ Hiding in a 1×1×1 hole is no longer an escape. When the spider is pressing directly over a dug-in player, it now **shrinks below its normal minimum size — just small enough to fit into your hole** — slips in after you, and bites. It regrows the instant the squeeze is over. New config key `squeezeSize` (default 0.25; raise it toward 1.0 if you want hidey-holes to stay viable).
+
+### v1.2.1 — all three loaders
 - **Digging in no longer makes the spider give up.** Hiding in a pit (or pillaring up) used to leave it standing at the rim, watching passively — even after you opened an escape path. Now, whenever you're vertically out of its reach, it applies **constant pressure toward your exact position, re-evaluating every tick** — the instant a block breaks or a ramp opens, it pours through the new opening. Dig wide and it climbs down in after you. Your first mistake is its opportunity. 🕷️
 
 ### v1.2.0 — "The Dimension Update" — all three loaders

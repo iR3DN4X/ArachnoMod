@@ -206,6 +206,10 @@ object Config {
     // ---- Size & growth ---------------------------------------------------------------------
     val MIN_SIZE = DoubleValue("minSize", 0.6, 0.1, 10.0,
         comment("The spider's size when right next to a player (1.0 = the original spider's size)."))
+    val SQUEEZE_SIZE = DoubleValue("squeezeSize", 0.25, 0.1, 1.0,
+        comment("When a hiding player is vertically out of reach and the spider is right on top of",
+                "them, it SQUEEZES below minSize down to this - 0.25 fits a 1x1x1 hole, just barely -",
+                "to come in after them. It regrows the moment the squeeze is over. No hole is safe."))
     val MAX_SIZE = DoubleValue("maxSize", 15.0, 0.5, 50.0,
         comment("The spider's size when far away. 15 towers over the trees (~16-block body)."))
     val SIZE_NEAR_DISTANCE = DoubleValue("sizeNearDistance", 4.0, 0.0, 64.0,

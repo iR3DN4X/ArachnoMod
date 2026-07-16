@@ -211,11 +211,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
 
         // Distance-based grow/shrink — physical, so the IK feet stay planted at every size. Size
         // reacts to distance regardless of AI mode: a wandering spider far away is still huge.
+        // THE SQUEEZE overrides it: pressing over a dug-in player, the spider shrinks below
+        // minSize to squeezeSize — just small enough to fit a 1x1x1 hole — and comes in after
+        // them; the moment the squeeze ends, distance-based sizing regrows it automatically.
         val horizontalDistance = nearest?.let {
             val dx = it.x - body.position.x; val dz = it.z - body.position.z
             sqrt(dx * dx + dz * dz)
         } ?: Config.SIZE_FAR_DISTANCE.get()
-        val targetScale = distanceToScale(horizontalDistance)
+        val squeezing = ecsEntity?.let { SpiderAI.isSqueezing(it) } ?: false
+        val targetScale = if (squeezing) Config.SQUEEZE_SIZE.get() else distanceToScale(horizontalDistance)
         currentScale = approachScale(currentScale, targetScale)
         body.setSizeScale(currentScale)
 

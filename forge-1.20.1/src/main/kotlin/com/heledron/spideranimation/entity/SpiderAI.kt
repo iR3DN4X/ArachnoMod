@@ -27,6 +27,7 @@ enum class SpiderMode { WANDER, ALERT, CHASE }
 class SpiderAIState(var anchor: Vector3d) {
     var mode: SpiderMode = SpiderMode.WANDER
     var modeTimer: Int = 0
+    var squeezing: Boolean = false   // pressing over a dug-in player: shrink to fit their hole
 }
 
 /**
@@ -97,7 +98,7 @@ object SpiderAI {
                     enterWander(state, body)
                     tickWander(entity, body, state)
                 } else {
-                    tickChase(entity, body, nearestPlayer)
+                    tickChase(entity, body, state, nearestPlayer)
                 }
             }
         }
@@ -106,17 +107,23 @@ object SpiderAI {
     /** True while this spider is actively hunting (used by SpiderMob to gate the melee bite). */
     fun isChasing(entity: EcsEntity): Boolean = states[entity]?.mode == SpiderMode.CHASE
 
+    /** True while the spider is pressing over a dug-in player and should SQUEEZE down to
+     *  Config.SQUEEZE_SIZE to fit into their hole (SpiderMob drives the actual scale). */
+    fun isSqueezing(entity: EcsEntity): Boolean = states[entity]?.squeezing == true
+
     // ---------------------------------------------------------------- mode transitions
 
     private fun enterWander(state: SpiderAIState, body: SpiderBody) {
         state.mode = SpiderMode.WANDER
         state.modeTimer = 0
+        state.squeezing = false
         state.anchor = Vector3d(body.position)
     }
 
     private fun enterAlert(state: SpiderAIState) {
         state.mode = SpiderMode.ALERT
         state.modeTimer = Config.ALERT_REACTION_TICKS.get()
+        state.squeezing = false
     }
 
     private fun enterChase(state: SpiderAIState) {
@@ -166,7 +173,7 @@ object SpiderAI {
         if (state.modeTimer <= 0) enterChase(state) else state.modeTimer--
     }
 
-    private fun tickChase(entity: EcsEntity, body: SpiderBody, player: ServerPlayer) {
+    private fun tickChase(entity: EcsEntity, body: SpiderBody, state: SpiderAIState, player: ServerPlayer) {
         body.setSpeedScale(chaseSpeedFactor(body))
         // Stop distance must be CLAMPED: bodyHeight scales with size, and a size-15 spider's
         // bodyHeight*2 is ~33 blocks - it would consider itself "arrived" while still far away.
@@ -181,9 +188,20 @@ object SpiderAI {
         // path continuously and punishes the player's first mistake.
         val groundLevelY = body.position.y - body.walkGait.stationary.bodyHeight
         val verticalGap = abs(groundLevelY - player.y)
+        val pressureMode = verticalGap > 2.0
         val arriveDistance =
-            if (verticalGap > 2.0) 0.25
+            if (pressureMode) 0.25
             else (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
+
+        // THE SQUEEZE: pressing directly over (or under) a hidden player, the spider shrinks to
+        // Config.SQUEEZE_SIZE - small enough to slip into a 1x1x1 hole - and comes in after
+        // them. Only when horizontally on top of the target; while still closing in it keeps
+        // its distance-based size. SpiderMob reads this flag and drives the actual scale, and
+        // regrows the moment the squeeze ends.
+        val dx = player.x - body.position.x
+        val dz = player.z - body.position.z
+        state.squeezing = pressureMode && (dx * dx + dz * dz) < 6.0 * 6.0
+
         entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(Vector3d(player.x, player.y, player.z), arriveDistance))
     }
 
