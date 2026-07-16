@@ -156,7 +156,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.2.0 (latest) — "The Dimension Update" — all three loaders
+### v1.2.1 (latest) — all three loaders
+- **Digging in no longer makes the spider give up.** Hiding in a pit (or pillaring up) used to leave it standing at the rim, watching passively — even after you opened an escape path. Now, whenever you're vertically out of its reach, it applies **constant pressure toward your exact position, re-evaluating every tick** — the instant a block breaks or a ramp opens, it pours through the new opening. Dig wide and it climbs down in after you. Your first mistake is its opportunity. 🕷️
+
+### v1.2.0 — "The Dimension Update" — all three loaders
 - **Fixed (gamebreaking): dimension travel no longer leaves piles of frozen spider "corpses" behind.** The spider's leg displays could get saved into chunks when you portalled away; returning showed dozens of frozen spiders stacked at one spot. Displays are now never saved — **and a janitor sweep automatically deletes the leftover frozen piles from worlds affected by older versions** as you revisit those areas. Your infested world heals itself.
 - **NEW: the spider follows you across dimensions.** Leave it behind in the overworld and a few seconds later it re-emerges near you in the Nether, the End — **or any modded dimension** (Twilight Forest, Dimensional Doors, anything): the follow triggers on where the players are, not on which portal was used. There is still only ever ONE spider.
 - **Fixed: spawning and wandering now work correctly under the Nether roof** (and any ceiling'd modded dimension) — the ground search works around the player's altitude instead of hitting the bedrock ceiling.

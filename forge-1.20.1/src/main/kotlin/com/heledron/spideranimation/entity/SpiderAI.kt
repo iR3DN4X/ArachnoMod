@@ -10,6 +10,7 @@ import com.heledron.spideranimation.spider.TargetBehaviour
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import org.joml.Vector3d
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
@@ -169,7 +170,20 @@ object SpiderAI {
         body.setSpeedScale(chaseSpeedFactor(body))
         // Stop distance must be CLAMPED: bodyHeight scales with size, and a size-15 spider's
         // bodyHeight*2 is ~33 blocks - it would consider itself "arrived" while still far away.
-        val arriveDistance = (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
+        //
+        // DUG-IN PRESSURE: arrival is measured HORIZONTALLY, so a player who digs a pit under
+        // the spider (or pillars up) reads as "arrived" - the spider used to stand at the rim
+        // watching forever, even after the player opened a walkable path. When the player is
+        // vertically separated from the spider's ground plane, the stop distance collapses to
+        // ~0 instead: constant pressure toward their exact spot. Because this target refreshes
+        // EVERY tick, the moment the surroundings change (a block broken, a ramp dug) the
+        // pressure carries the spider straight through the new opening - it re-evaluates the
+        // path continuously and punishes the player's first mistake.
+        val groundLevelY = body.position.y - body.walkGait.stationary.bodyHeight
+        val verticalGap = abs(groundLevelY - player.y)
+        val arriveDistance =
+            if (verticalGap > 2.0) 0.25
+            else (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
         entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(Vector3d(player.x, player.y, player.z), arriveDistance))
     }
 
