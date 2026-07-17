@@ -109,6 +109,12 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     // copy can never reload and become a second spider.
     override fun shouldBeSaved() = false
 
+    // Lava is variant-flavoured: the NETHERITE spider is forged of the stuff, so like netherite
+    // gear it neither burns nor takes ANY fire-type damage (lava, magma blocks, campfires) —
+    // fireImmune also makes isOnFire() report false, so no flame overlay ever shows. The CAMO
+    // variant is living moss and undergrowth: it burns like it (vanilla lava/burn damage).
+    override fun fireImmune() = variant == SpiderVariant.NETHERITE
+
     // Movement is handled by the ECS simulation, not vanilla goals.
     override fun registerGoals() {}
 
@@ -200,6 +206,24 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             return
         }
         body.manualControl = false
+
+        // The CAMO variant burns VISIBLY: the mob itself is an invisible hitbox and BlockDisplays
+        // can't catch fire, so vanilla burning alone would be a silent, invisible death. While it
+        // is on fire, dress the body and the feet in flame + smoke so the player sees the moss
+        // ablaze. (Positions come from the simulation, never the entity — the hitbox lags a tick.)
+        if (variant == SpiderVariant.CAMO && isOnFire && tickCount % 3 == 0) {
+            val p = body.position
+            level.sendParticles(ParticleTypes.FLAME, p.x, p.y, p.z, 2,
+                0.3 * currentScale, 0.2 * currentScale, 0.3 * currentScale, 0.01)
+            level.sendParticles(ParticleTypes.LARGE_SMOKE, p.x, p.y + 0.3 * currentScale, p.z, 1,
+                0.2 * currentScale, 0.1, 0.2 * currentScale, 0.02)
+            for (leg in body.legs) {
+                if (random.nextFloat() < 0.35f) {
+                    val foot = leg.endEffector
+                    level.sendParticles(ParticleTypes.FLAME, foot.x, foot.y + 0.1, foot.z, 1, 0.05, 0.05, 0.05, 0.005)
+                }
+            }
+        }
 
         // Movement, facing and SPEED are driven by SpiderAI's wander/alert/chase state machine
         // (ticked once per tick from AppState.driveWildSpiders — not here, so mode timers don't
