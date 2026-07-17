@@ -4,6 +4,7 @@ import com.heledron.spideranimation.Config
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.tags.FluidTags
 import net.minecraft.world.level.levelgen.Heightmap
 import kotlin.math.floor
 
@@ -116,6 +117,28 @@ object SafeGroundFinder {
             if (!state.isAir && !state.getCollisionShape(level, pos).isEmpty) return (yy + 1).toDouble()
         }
         return null
+    }
+
+    /**
+     * Depth (in blocks) of the contiguous WATER column sitting on the floor at (x, z), counting
+     * upward from [floorY] (a floor-top Y as returned by [findFloorBelow]). 0.0 when the floor
+     * is dry. Waterlogged plants (kelp, seagrass) count as water — their fluid state IS water —
+     * so kelp forests measure as the deep water they are.
+     */
+    fun waterDepthAbove(level: ServerLevel, x: Double, floorY: Double, z: Double, maxDepth: Int = 64): Double {
+        val blockX = floor(x).toInt()
+        val blockZ = floor(z).toInt()
+        var y = floor(floorY).toInt()
+        val top = (y + maxDepth).coerceAtMost(level.maxBuildHeight - 1)
+        val pos = BlockPos.MutableBlockPos()
+        var depth = 0
+        while (y <= top) {
+            pos.set(blockX, y, blockZ)
+            if (!level.getFluidState(pos).`is`(FluidTags.WATER)) break
+            depth++
+            y++
+        }
+        return depth.toDouble()
     }
 
     /** Solid enough to stand on and not a liquid: never place a spider on/in water or lava. */

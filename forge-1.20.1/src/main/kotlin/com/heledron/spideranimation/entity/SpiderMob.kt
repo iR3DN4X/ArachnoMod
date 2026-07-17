@@ -244,7 +244,17 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             sqrt(dx * dx + dz * dz)
         } ?: Config.SIZE_FAR_DISTANCE.get()
         val squeezing = ecsEntity?.let { SpiderAI.isSqueezing(it) } ?: false
-        val targetScale = if (squeezing) Config.SQUEEZE_SIZE.get() else distanceToScale(horizontalDistance)
+        // GROW IN WATER (growInWater, default true): distance-based sizing keeps the spider SMALL
+        // near a player, so a swimmer (or someone perched over a lake) used to watch it drown on
+        // the lake floor. When the floor it stands on is submerged, grow it just big enough for
+        // the body to ride above the surface, whatever the depth. Keyed on the ENVIRONMENT (water
+        // column over its floor), not on "is the mob in water" — a grown body above the surface
+        // is no longer in water, which would shrink, dunk and regrow it in an endless bob. The
+        // squeeze still outranks it: it's the active kill move, and brief.
+        val waterScale = if (!squeezing && Config.GROW_IN_WATER.get()) waterGrowthScale(level, body) else null
+        val targetScale =
+            if (squeezing) Config.SQUEEZE_SIZE.get()
+            else maxOf(distanceToScale(horizontalDistance), waterScale ?: 0.0)
         currentScale = approachScale(currentScale, targetScale)
         body.setSizeScale(currentScale)
 
@@ -295,6 +305,23 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         val far = Config.SIZE_FAR_DISTANCE.get()
         val t = if (far > near) ((distance - near) / (far - near)).coerceIn(0.0, 1.0) else 1.0
         return Config.MIN_SIZE.get() + (Config.MAX_SIZE.get() - Config.MIN_SIZE.get()) * t
+    }
+
+    /**
+     * The size needed for the body centre to ride ~half a block above the water the spider is
+     * standing in, or null when it isn't standing in water worth reacting to. The body stands at
+     * floor + bodyHeight (which scales linearly with size), so the needed scale is simply
+     * (depth + clearance) / per-unit bodyHeight. May exceed maxSize on purpose: "any body of
+     * water" includes deep oceans. Depths of a block or less are ignored — the spider doesn't
+     * drown in a creek, and inflating at every stream crossing would look jumpy.
+     */
+    private fun waterGrowthScale(level: ServerLevel, body: SpiderBody): Double? {
+        val p = body.position
+        val floorY = SafeGroundFinder.findFloorBelow(level, p.x, p.y, p.z) ?: return null
+        val depth = SafeGroundFinder.waterDepthAbove(level, p.x, floorY, p.z)
+        if (depth <= 1.0) return null
+        val bodyHeightPerScale = body.walkGait.stationary.bodyHeight / body.sizeScale
+        return (depth + 0.5) / bodyHeightPerScale
     }
 
     /**

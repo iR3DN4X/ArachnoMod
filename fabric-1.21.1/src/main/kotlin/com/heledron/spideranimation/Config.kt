@@ -223,6 +223,11 @@ object Config {
                 "Kept faster than growing so it melts down promptly as it reaches you."))
     val RIDDEN_SIZE = DoubleValue("riddenSize", 2.0, 0.3, 20.0,
         comment("The stable size the spider settles to while a player is riding it."))
+    val GROW_IN_WATER = BooleanValue("growInWater", true,
+        comment("If true, a spider standing in water GROWS just big enough for its body to ride",
+                "above the surface - whatever the depth - so it never drowns and keeps chasing",
+                "swimmers. Set to false to keep water as a weakness: a small spider lured into",
+                "deep water will stay small and drown."))
 
     // ---- Combat & drops --------------------------------------------------------------------
     val MAX_HEALTH = DoubleValue("maxHealth", 1000.0, 1.0, 1000000.0,
