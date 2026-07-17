@@ -12,7 +12,7 @@ Built on **1000 HP** of boss-grade menace. Kill it and it *might* just drop the 
 
 - **hunts you** — it spots you from far away, stares you down, and charges;
 - is **enormous** — up to ~16 blocks tall, towering over the trees as it closes in;
-- can be **camouflaged** (v1.1.1) — the CAMO variant blends into the terrain and sounds like ordinary footsteps, so it can get *very* close before you notice it.
+- can be **camouflaged** — the CAMO variant blends into the terrain and sounds like ordinary footsteps, so it can get *very* close before you notice it.
 
 There is no "cute mode." If realistic spider movement is a problem for you or the people on your server, this may genuinely be an uncomfortable experience — consider `hostileOnlyAtNight = true`, lowering `maxSize`, or sitting this one out. You have been warned. 🕸️
 
@@ -35,16 +35,16 @@ ArachnoMod now runs on **three loaders**:
 ## 🕷️ Features
 
 - **One spider, always hunting.** Exactly one exists at a time. It wanders the world looking for the nearest player within its chase distance.
-- **🆕 Wander / Alert / Chase AI (v1.1.1, smarter in v1.1.5).** When no one's around, the spider calmly **patrols** its territory — and it **pre-scans every patrol route block-by-block** before walking it, planning around lava, water, chasms, and cliff edges instead of tumbling into them. The instant it spots you it **freezes and snaps to face you** — one heart-stopping beat — then **charges**. It keeps chasing until you truly escape (wider give-up radius than its detection radius, so no flickering at the boundary). Optional `hostileOnlyAtNight` mode makes it docile in daylight like a vanilla spider.
-- **🆕 The hunt has pacing (v1.1.5).** The first spider arrives **about a minute into a session** — no long wait for the main event. **Slay it and you've earned two full Minecraft days (40 min) of real peace** — no respawn treadmill. And if you hide in Peaceful? It returns **one minute after peace ends**. Peace has a price. 😈 (All three timers configurable.)
-- **🆕 Idle life (v1.1.5).** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the thousand-HP murder kaiju is, briefly, adorable.
-- **🆕 The CAMO variant (v1.1.1).** A second spider that can naturally spawn (25% by default, still only ONE spider ever) with **ACTIVE CAMOUFLAGE**: every leg continuously repaints itself as **the actual block it's standing on** — grass legs in the meadow, sand legs on the beach, stone legs in the mountains, changing leg-by-leg as it walks. Its footsteps play **the real step sound of the block underfoot**, exactly like player footsteps — it crunches on gravel, thuds on dirt, and goes whisper-quiet on wool. You won't see it coming. You might not hear it either.
-- **🆕 Safe spawning (v1.1.1).** Spawns (and patrol routes) are validated for solid, dry ground — no more spiders in the void, over oceans, or inside SkyBlock gaps. Keeps the configured spawn distance whenever possible, preferring farther over closer; never pops up in your face.
+- **Wander / Alert / Chase AI.** When no one's around, the spider calmly **patrols** its territory — and it **pre-scans every patrol route block-by-block** before walking it, planning around lava, water, chasms, and cliff edges instead of tumbling into them. The instant it spots you it **freezes and snaps to face you** — one heart-stopping beat — then **charges**. It keeps chasing until you truly escape (wider give-up radius than its detection radius, so no flickering at the boundary). Optional `hostileOnlyAtNight` mode makes it docile in daylight like a vanilla spider.
+- **The hunt has pacing.** The first spider arrives **about a minute into a session** — no long wait for the main event. **Slay it and you've earned two full Minecraft days (40 min) of real peace** — no respawn treadmill. And if you hide in Peaceful? It returns **one minute after peace ends**. Peace has a price. 😈 (All three timers configurable.)
+- **Idle life.** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the thousand-HP murder kaiju is, briefly, adorable.
+- **The CAMO variant.** A second spider that can naturally spawn (25% by default, still only ONE spider ever) with **ACTIVE CAMOUFLAGE**: every leg continuously repaints itself as **the actual block it's standing on** — grass legs in the meadow, sand legs on the beach, stone legs in the mountains, changing leg-by-leg as it walks. Its footsteps play **the real step sound of the block underfoot**, exactly like player footsteps — it crunches on gravel, thuds on dirt, and goes whisper-quiet on wool. You won't see it coming. You might not hear it either.
+- **Safe spawning.** Spawns (and patrol routes) are validated for solid, dry ground — no more spiders in the void, over oceans, or inside SkyBlock gaps. Keeps the configured spawn distance whenever possible, preferring farther over closer; never pops up in your face.
 - **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 - **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
 - **Charges faster the farther it is** — up to **8× speed** — so distance is no safety.
 - **Boss-grade fight.** 1000 HP and a 6-heart melee hit. Bring friends.
-- **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff) — and since v1.1.2 the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
+- **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff) — the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
 - **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
 - **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
 - **Fully configurable & hot-reloading.** Every gameplay number lives in a commented config file you can edit live (see Configuration).
@@ -62,62 +62,81 @@ All under `/spider`:
 | `/spider size <n>` | Live-resizes **your** personal spider (0.3–20). | Anyone (own spider) |
 | `/spider release` | Dismisses your personal spider. | Anyone |
 | `/spider chasedistance <blocks>` | Sets how far (8–256) the **wild** spider spots and chases players. **Saves into the config file.** | Ops (permission level 2) |
-| 🆕 `/spider config <key> get` | Shows any config value in chat. | Ops (permission level 2) |
-| 🆕 `/spider config <key> set <value>` | **Live-edits ANY of the 38 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
+| `/spider config <key> get` | Shows any config value in chat. | Ops (permission level 2) |
+| `/spider config <key> set <value>` | **Live-edits ANY of the 40 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
 
 ---
 
 ## ⚙️ Configuration
 
-All tunables live in **`config/arachnomod-common.toml`**, created on first launch. It's **fully commented** and **hot-reloads** — edit the file and most changes apply to a running world within moments, no restart needed. (Spawn/gait values are read when a spider spawns, so let the current one respawn to apply those.)
+All tunables live in **`config/arachnomod-common.toml`**, created on first launch. It's **fully commented** and **hot-reloads** — edit the file and most changes apply to a running world within moments, no restart needed. (Spawn/gait values are read when a spider spawns, so let the current one respawn to apply those.) Every key is also live-editable in-game with `/spider config <key> set <value>`.
+
+**Spawning**
 
 | Key | Default | Meaning |
 |---|---|---|
 | `spawnMinMinutes` | 1.0 | Min minutes before the FIRST spider of a session spawns |
-| `spawnMaxMinutes` | 1.0 | Max minutes before the FIRST spawn (random between the two); after a kill see respawnAfterKillMinutes |
+| `spawnMaxMinutes` | 1.0 | Max minutes before the FIRST spawn (random between the two) |
+| `respawnAfterKillMinutes` | 40.0 | Cooldown after the spider is KILLED (40 = 2 Minecraft days of earned peace) |
+| `peacefulExitSpawnMinutes` | 1.0 | The spider returns this many minutes after Peaceful is switched off 😈 |
 | `spawnDistanceMin` | 30.0 | Closest a spider naturally spawns from a player (blocks) |
 | `spawnDistanceMax` | 34.0 | Farthest a spider naturally spawns from a player (blocks) |
+| `spawnAngleAttempts` | 24 | Directions tested per candidate distance when hunting safe spawn ground |
+| `spawnMaxVerticalSearch` | 48 | How deep below the heightmap to look for solid ground (SkyBlock-friendly) |
+| `camoVariantChance` | 0.25 | Chance a spawned spider is the CAMO variant (natural spawns AND spawn eggs) |
+
+**Chase & speed**
+
+| Key | Default | Meaning |
+|---|---|---|
 | `chaseDistance` | 64.0 | How far the spider spots & chases players (blocks) |
+| `chaseExitDistanceMultiplier` | 1.25 | Give-up radius = chaseDistance × this (prevents boundary flicker) |
+| `alertReactionTicks` | 10 | The freeze-and-stare beat before it charges (0 = instant charge) |
+| `hostileOnlyAtNight` | false | Only hunts at night, like a vanilla spider |
 | `chaseSpeedBlocksPerSecond` | 8.0 | Top chase speed at normal size |
 | `speedGrowthFactor` | 8.0 | Speed multiplier at maximum size |
 | `legStepSpeed` | 1.1 | How fast the legs swing — the "scurry" |
+
+**Wandering & idle**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enableWandering` | true | Calm patrol when no player is in range (false = stands still) |
+| `wanderSpeedFactor` | 0.35 | Patrol speed as a fraction of chase speed |
+| `wanderRadius` | 24.0 | How far it patrols from its anchor point |
+| `wanderMinIntervalSeconds` | 3.0 | Shortest commitment to one patrol heading |
+| `wanderMaxIntervalSeconds` | 9.0 | Longest commitment to one patrol heading |
+| `wanderPauseChance` | 0.25 | Chance it pauses instead of picking a new heading |
+| `groomingChance` | 0.03 | Chance per second that the idle spider grooms (wandering disabled; 0 = off) |
+
+**Size & growth**
+
+| Key | Default | Meaning |
+|---|---|---|
 | `minSize` | 0.6 | Size right next to a player |
+| `squeezeSize` | 0.25 | The size it SQUEEZES down to over a player hiding in a hole — 0.25 just fits a 1×1×1 |
 | `maxSize` | 15.0 | Size when far away (15 towers over the trees) |
 | `sizeNearDistance` | 4.0 | At/below this distance the spider is at minSize |
 | `sizeFarDistance` | 32.0 | At/above this distance the spider is at maxSize |
 | `growPercentPerTick` | 12.0 | Fastest it can grow (%/tick) |
 | `shrinkPercentPerTick` | 25.0 | Fastest it can shrink (%/tick) |
 | `riddenSize` | 2.0 | Stable size while a player is riding it |
+| `growInWater` | true | In water, grow just big enough to ride above the surface instead of drowning (false = deep water stays a drowning trap) |
+
+**Combat & drops**
+
+| Key | Default | Meaning |
+|---|---|---|
 | `maxHealth` | 1000.0 | The spider's max health |
 | `attackDamageHearts` | 6.0 | Melee damage in hearts per hit |
 | `attackCooldownTicks` | 20 | Ticks between melee hits (20 = 1/sec) |
 | `netheriteDropChance` | 0.5 | Chance to drop a netherite ingot on death |
 
-**🆕 New in v1.1.3–v1.1.5** (every key editable in-game via `/spider config`):
+**Variant sounds** *(the netherite spider always keeps its iconic clank; camo plays the real sound of the block underfoot)*
 
 | Key | Default | Meaning |
 |---|---|---|
-| `respawnAfterKillMinutes` | 40.0 | Cooldown after the spider is KILLED (40 = 2 Minecraft days of earned peace) |
-| `peacefulExitSpawnMinutes` | 1.0 | The spider returns this many minutes after Peaceful is switched off 😈 |
-| `groomingChance` | 0.03 | Chance per second that the idle spider grooms (wandering disabled; 0 = off) |
-
-**🆕 New in v1.1.1** (16 more keys — every one editable in-game via `/spider config`):
-
-| Key | Default | Meaning |
-|---|---|---|
-| `spawnAngleAttempts` | 24 | Directions tested per candidate distance when hunting safe spawn ground |
-| `spawnMaxVerticalSearch` | 48 | How deep below the heightmap to look for solid ground (SkyBlock-friendly) |
-| `camoVariantChance` | 0.25 | Chance a spawned spider is the CAMO variant (natural spawns AND spawn eggs) |
-| `chaseExitDistanceMultiplier` | 1.25 | Give-up radius = chaseDistance × this (prevents boundary flicker) |
-| `alertReactionTicks` | 10 | The freeze-and-stare beat before it charges (0 = instant charge) |
-| `hostileOnlyAtNight` | false | Only hunts at night, like a vanilla spider |
-| `enableWandering` | true | Calm patrol when no player is in range (false = stands still, pre-1.1 behavior) |
-| `wanderSpeedFactor` | 0.35 | Patrol speed as a fraction of chase speed |
-| `wanderRadius` | 24 | How far it patrols from its anchor point |
-| `wanderMinIntervalSeconds` | 3.0 | Shortest commitment to one patrol heading |
-| `wanderMaxIntervalSeconds` | 9.0 | Longest commitment to one patrol heading |
-| `wanderPauseChance` | 0.25 | Chance it pauses instead of picking a new heading |
-| `variantStepSound` | `block.moss.step` | Fallback step sound for non-netherite variants (camo normally uses the walked-on block's own sound) |
+| `variantStepSound` | `block.moss.step` | Fallback step sound for non-netherite variants |
 | `variantStepVolume` | 0.3 | Volume of variant steps (also scales camo's block-matched steps) |
 | `variantLandSound` | `block.moss.fall` | Fallback landing sound for non-netherite variants |
 | `variantLandVolume` | 1.0 | Volume of variant landings |
@@ -156,7 +175,16 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.2.2 (latest) — all three loaders
+### v1.2.5 (latest) — all three loaders
+- **The spider no longer drowns while you laugh at it from a boat.** 🌊 Distance-based sizing kept it *small* right when it waded in after you — so it sank to the lake floor and drowned while you floated above. Now, standing in water of any depth, it **grows just big enough for its body to ride above the surface** and keeps coming. Works in ponds, rivers, lakes and deep oceans (it will exceed `maxSize` if the ocean demands it). New config toggle **`growInWater`** (default **true**); set it to `false` if you *want* deep water to stay a drowning trap.
+
+### v1.2.4 — all three loaders
+- **Lava now treats the two variants very differently.** 🔥 The **Netherite** spider is forged of the stuff — it now takes **no fire damage of any kind** (lava, magma blocks, campfires) and never catches fire: luring it into a lava lake just means it keeps coming, wading through the melt. The **Camo** variant is living moss and undergrowth — it **burns, no matter what**, and you'll see it: the body and legs catch visible flame and smoke as it cooks.
+
+### v1.2.3 — all three loaders
+- **THE SQUEEZE now actually descends into the hole.** In v1.2.2 the spider shrank correctly but hovered at the lip — its legs stood on the rim around your hole and held the body up there forever. Now, once it has shrunk small enough to fit, the body **sinks down the shaft after you** (pressing flat against the ground while it lines itself up, then pouring in over the lip) until the bite is on top of you. Also, the squeeze now only triggers when you're genuinely *below* the spider — shrinking at the base of your pillar never helped it reach you anyway.
+
+### v1.2.2 — all three loaders
 - **NEW: THE SQUEEZE.** 🕷️ Hiding in a 1×1×1 hole is no longer an escape. When the spider is pressing directly over a dug-in player, it now **shrinks below its normal minimum size — just small enough to fit into your hole** — slips in after you, and bites. It regrows the instant the squeeze is over. New config key `squeezeSize` (default 0.25; raise it toward 1.0 if you want hidey-holes to stay viable).
 
 ### v1.2.1 — all three loaders
