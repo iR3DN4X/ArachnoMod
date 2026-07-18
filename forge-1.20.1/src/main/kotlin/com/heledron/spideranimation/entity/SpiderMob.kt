@@ -56,7 +56,7 @@ import kotlin.math.sqrt
  * steers by looking + pressing forward (W), and the size pins to a mount-friendly scale.
  */
 /** Variants of the spider. NETHERITE is the armored classic; CAMO is the mossy chameleon;
- *  POISON is the slime-green tarantula that lunges and injects Poison II. */
+ *  POISON is the warped-teal tarantula that lunges and injects Poison II. */
 enum class SpiderVariant(val key: String) { NETHERITE("netherite"), CAMO("camo"), POISON("poison") }
 
 class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, level) {
@@ -237,7 +237,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // Non-NETHERITE variants burn VISIBLY: the mob itself is an invisible hitbox and
         // BlockDisplays can't catch fire, so vanilla burning alone would be a silent, invisible
         // death. While burning, dress the body and the feet in flame + smoke so the player sees
-        // the moss (or venom-slime) ablaze. (Positions come from the simulation, never the
+        // the moss (or warped fungus) ablaze. (Positions come from the simulation, never the
         // entity — the hitbox lags a tick.)
         if (variant != SpiderVariant.NETHERITE && isOnFire && tickCount % 3 == 0) {
             val p = body.position

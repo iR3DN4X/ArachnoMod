@@ -199,12 +199,12 @@ object AppState {
         //  - CAMO: plays the step/fall sound OF THE BLOCK under the foot, at the block's natural
         //    pitch — exactly like player footsteps — falling back to the configured variant sound
         //    when the foot is over air. variantStepVolume/variantLandVolume still scale loudness.
-        //  - POISON: locked to its slime squelch (it IS venom-green goo).
+        //  - POISON: locked to the warped wart squish (it IS eerie Nether fungus).
         //  - any other/future variant: the configured variant sounds.
         ecs.onEvent<LegStepEvent> { e ->
             when (e.spider.variantKey) {
                 "netherite" -> e.spider.level.playSoundAt(e.leg.endEffector, SoundEvents.NETHERITE_BLOCK_STEP, 0.3f, 1.0f)
-                "poison" -> e.spider.level.playSoundAt(e.leg.endEffector, SoundEvents.SLIME_BLOCK_STEP,
+                "poison" -> e.spider.level.playSoundAt(e.leg.endEffector, SoundEvents.WART_BLOCK_STEP,
                     Config.VARIANT_STEP_VOLUME.get().toFloat(), 0.9f)
                 "camo" -> {
                     val ground = GroundCamo.blockUnder(e.spider.level, e.leg.endEffector)
@@ -226,7 +226,7 @@ object AppState {
         ecs.onEvent<SpiderBodyHitGroundEvent> { e ->
             when (e.spider.variantKey) {
                 "netherite" -> e.spider.level.playSoundAt(e.spider.position, SoundEvents.NETHERITE_BLOCK_FALL, 1.0f, 0.8f)
-                "poison" -> e.spider.level.playSoundAt(e.spider.position, SoundEvents.SLIME_BLOCK_FALL,
+                "poison" -> e.spider.level.playSoundAt(e.spider.position, SoundEvents.WART_BLOCK_FALL,
                     Config.VARIANT_LAND_VOLUME.get().toFloat(), 0.8f)
                 "camo" -> {
                     // The body sits ~bodyHeight above ground, so scan a bit deeper than a foot.
