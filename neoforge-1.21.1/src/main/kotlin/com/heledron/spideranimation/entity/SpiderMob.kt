@@ -11,6 +11,7 @@ import com.heledron.spideranimation.spider.SpiderBody
 import com.heledron.spideranimation.spider.StayStillBehaviour
 import com.heledron.spideranimation.spider.camoSpider
 import com.heledron.spideranimation.spider.defaultSpider
+import com.heledron.spideranimation.spider.poisonSpider
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.sounds.SoundEvents
@@ -18,6 +19,8 @@ import net.minecraft.world.DifficultyInstance
 import net.minecraft.world.InteractionHand
 import net.minecraft.world.InteractionResult
 import net.minecraft.world.damagesource.DamageSource
+import net.minecraft.world.effect.MobEffectInstance
+import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EntityDimensions
 import net.minecraft.world.entity.EntityType
@@ -52,8 +55,9 @@ import kotlin.math.sqrt
  * simulation every tick. While RIDDEN, the mob takes manual control of the body instead: the rider
  * steers by looking + pressing forward (W), and the size pins to a mount-friendly scale.
  */
-/** Visual variants of the spider. NETHERITE is the classic; CAMO is the mossy one (v1.1). */
-enum class SpiderVariant(val key: String) { NETHERITE("netherite"), CAMO("camo") }
+/** Variants of the spider. NETHERITE is the armored classic; CAMO is the mossy chameleon;
+ *  POISON is the slime-green tarantula that lunges and injects Poison II. */
+enum class SpiderVariant(val key: String) { NETHERITE("netherite"), CAMO("camo"), POISON("poison") }
 
 class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, level) {
     private var body: SpiderBody? = null
@@ -78,6 +82,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // read LIVE each tick. Only the melee reach geometry stays hardcoded:
         const val ATTACK_REACH = 3.5
         const val REACH_SCALE_CAP = 2.0   // don't let the giant form melee from absurd distances
+        // The poison variant starts its rear-up + lunge when the player is within this many
+        // bite-reaches: far enough for the leap to read as a leap, close enough to connect.
+        const val LUNGE_RANGE_FACTOR = 2.2
 
         // Registration-time defaults; the real max health from the config is applied per-instance
         // in ensureBody (attributes are built before configs are guaranteed loaded).
@@ -127,8 +134,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         spawnType: MobSpawnType,
         spawnGroupData: SpawnGroupData?,
     ): SpawnGroupData? {
-        if (spawnType == MobSpawnType.SPAWN_EGG && random.nextDouble() < Config.CAMO_VARIANT_CHANCE.get()) {
-            variant = SpiderVariant.CAMO
+        if (spawnType == MobSpawnType.SPAWN_EGG) {
+            if (random.nextDouble() < Config.POISON_VARIANT_CHANCE.get()) variant = SpiderVariant.POISON
+            else if (random.nextDouble() < Config.CAMO_VARIANT_CHANCE.get()) variant = SpiderVariant.CAMO
         }
         return super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData)
     }
@@ -163,7 +171,11 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private fun ensureBody(level: ServerLevel): SpiderBody {
         body?.let { return it }
 
-        val options = if (variant == SpiderVariant.CAMO) camoSpider() else defaultSpider()
+        val options = when (variant) {
+            SpiderVariant.CAMO -> camoSpider()
+            SpiderVariant.POISON -> poisonSpider()
+            else -> defaultSpider()
+        }
         val bodyHeight = options.walkGait.stationary.bodyHeight
         val spawn = Vector3d(x, y + bodyHeight, z)
         val yaw = Math.round(yRot / 45f) * 45f
@@ -177,9 +189,11 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // Apply the configured max health per-instance (attributes register before configs load;
         // health is per-VARIANT: the armored netherite runs leaner than the bare camo).
         // Safe to top up here: this runs once per mob, and spiders are never save/reloaded.
-        getAttribute(Attributes.MAX_HEALTH)?.baseValue =
-            if (variant == SpiderVariant.NETHERITE) Config.NETHERITE_MAX_HEALTH.get()
-            else Config.CAMO_MAX_HEALTH.get()
+        getAttribute(Attributes.MAX_HEALTH)?.baseValue = when (variant) {
+            SpiderVariant.NETHERITE -> Config.NETHERITE_MAX_HEALTH.get()
+            SpiderVariant.CAMO -> Config.CAMO_MAX_HEALTH.get()
+            SpiderVariant.POISON -> Config.POISON_MAX_HEALTH.get()
+        }
         health = maxHealth
 
         // The NETHERITE variant wears what it's made of: the exact stats of a FULL suit of
@@ -219,11 +233,12 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         }
         body.manualControl = false
 
-        // The CAMO variant burns VISIBLY: the mob itself is an invisible hitbox and BlockDisplays
-        // can't catch fire, so vanilla burning alone would be a silent, invisible death. While it
-        // is on fire, dress the body and the feet in flame + smoke so the player sees the moss
-        // ablaze. (Positions come from the simulation, never the entity — the hitbox lags a tick.)
-        if (variant == SpiderVariant.CAMO && isOnFire && tickCount % 3 == 0) {
+        // Non-NETHERITE variants burn VISIBLY: the mob itself is an invisible hitbox and
+        // BlockDisplays can't catch fire, so vanilla burning alone would be a silent, invisible
+        // death. While burning, dress the body and the feet in flame + smoke so the player sees
+        // the moss (or venom-slime) ablaze. (Positions come from the simulation, never the
+        // entity — the hitbox lags a tick.)
+        if (variant != SpiderVariant.NETHERITE && isOnFire && tickCount % 3 == 0) {
             val p = body.position
             level.sendParticles(ParticleTypes.FLAME, p.x, p.y, p.z, 2,
                 0.3 * currentScale, 0.2 * currentScale, 0.3 * currentScale, 0.01)
@@ -273,12 +288,27 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // Melee: hit the nearest player if within (scaled) reach, on a cooldown. Tamed = docile.
         // Only bites while actually HUNTING (chase mode) — so a peacefully wandering spider (or
         // any spider during the day with hostileOnlyAtNight) never sucker-punches a bystander.
+        // The POISON variant fights like a real tarantula instead of trading standing hits: in
+        // range it REARS UP with its front legs raised (the telegraph), LUNGES, and only a bite
+        // landed out of that lunge connects — for less damage, but with Poison II in it.
         if (attackCooldown > 0) attackCooldown--
         val hunting = ecsEntity?.let { SpiderAI.isChasing(it) } ?: false
-        if (!tamed && hunting && nearest != null && attackCooldown == 0 && nearest.isAlive) {
+        if (!tamed && hunting && nearest != null && nearest.isAlive) {
             val reach = ATTACK_REACH * currentScale.coerceAtMost(REACH_SCALE_CAP)
             val distSqr = nearest.distanceToSqr(body.position.x, body.position.y, body.position.z)
-            if (distSqr <= reach * reach) {
+            if (variant == SpiderVariant.POISON) {
+                val lungeRange = reach * LUNGE_RANGE_FACTOR
+                if (attackCooldown == 0 && !body.isLunging && distSqr <= lungeRange * lungeRange) {
+                    body.beginLunge(Vector3d(nearest.x - body.position.x, 0.0, nearest.z - body.position.z))
+                    attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()   // recovery starts at the leap
+                }
+                if (body.isLungeStriking && distSqr <= reach * reach) {
+                    nearest.hurt(damageSources().mobAttack(this), (Config.POISON_ATTACK_DAMAGE_HEARTS.get() * 2.0).toFloat())
+                    nearest.addEffect(MobEffectInstance(MobEffects.POISON,
+                        (Config.POISON_EFFECT_SECONDS.get() * 20.0).toInt(), 1), this)
+                    body.endLunge()   // bite landed — end the strike, so one lunge = one bite
+                }
+            } else if (attackCooldown == 0 && distSqr <= reach * reach) {
                 nearest.hurt(damageSources().mobAttack(this), (Config.ATTACK_DAMAGE_HEARTS.get() * 2.0).toFloat())
                 attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()
             }

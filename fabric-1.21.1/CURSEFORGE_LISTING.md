@@ -39,6 +39,7 @@ ArachnoMod now runs on **three loaders**:
 - **The hunt has pacing.** The first spider arrives **about a minute into a session** — no long wait for the main event. **Slay it and you've earned two full Minecraft days (40 min) of real peace** — no respawn treadmill. And if you hide in Peaceful? It returns **one minute after peace ends**. Peace has a price. 😈 (All three timers configurable.)
 - **Idle life.** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the murder kaiju is, briefly, adorable.
 - **The CAMO variant.** A second spider that can naturally spawn (25% by default, still only ONE spider ever) with **ACTIVE CAMOUFLAGE**: every leg continuously repaints itself as **the actual block it's standing on** — grass legs in the meadow, sand legs on the beach, stone legs in the mountains, changing leg-by-leg as it walks. Its footsteps play **the real step sound of the block underfoot**, exactly like player footsteps — it crunches on gravel, thuds on dirt, and goes whisper-quiet on wool. You won't see it coming. You might not hear it either.
+- **The POISON variant.** ☠️ A third spider (20% of spawns by default) in the pale sickly green of a bottled Potion of Poison, its footsteps squelching like slime. It fights like a **real tarantula**: in striking range it **rears up, front legs raised** — that's your only warning — then **LUNGES**, hurling its whole body at you. The bite is gentler than its cousins' (3 hearts) but injects **Poison II for 30 seconds**. 500 HP and no armor… but with the venom ticking, the clock is yours to worry about.
 - **Safe spawning.** Spawns (and patrol routes) are validated for solid, dry ground — no more spiders in the void, over oceans, or inside SkyBlock gaps. Keeps the configured spawn distance whenever possible, preferring farther over closer; never pops up in your face.
 - **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 - **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
@@ -63,7 +64,7 @@ All under `/spider`:
 | `/spider release` | Dismisses your personal spider. | Anyone |
 | `/spider chasedistance <blocks>` | Sets how far (8–256) the **wild** spider spots and chases players. **Saves into the config file.** | Ops (permission level 2) |
 | `/spider config <key> get` | Shows any config value in chat. | Ops (permission level 2) |
-| `/spider config <key> set <value>` | **Live-edits ANY of the 41 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
+| `/spider config <key> set <value>` | **Live-edits ANY of the 45 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
 
 ---
 
@@ -84,6 +85,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | `spawnAngleAttempts` | 24 | Directions tested per candidate distance when hunting safe spawn ground |
 | `spawnMaxVerticalSearch` | 48 | How deep below the heightmap to look for solid ground (SkyBlock-friendly) |
 | `camoVariantChance` | 0.25 | Chance a spawned spider is the CAMO variant (natural spawns AND spawn eggs) |
+| `poisonVariantChance` | 0.2 | Chance a spawned spider is the POISON variant (rolled before the camo chance) |
 
 **Chase & speed**
 
@@ -129,7 +131,10 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 |---|---|---|
 | `netheriteMaxHealth` | 350.0 | Max health of the netherite variant (it also wears full netherite-suit armor stats) |
 | `camoMaxHealth` | 600.0 | Max health of the camo variant (no armor) |
+| `poisonMaxHealth` | 500.0 | Max health of the poison variant (no armor — its danger is the bite) |
 | `attackDamageHearts` | 6.0 | Melee damage in hearts per hit |
+| `poisonAttackDamageHearts` | 3.0 | The poison variant's bite damage in hearts (every bite also injects Poison II) |
+| `poisonEffectSeconds` | 30.0 | How long the Poison II from the poison variant's bite lasts |
 | `attackCooldownTicks` | 20 | Ticks between melee hits (20 = 1/sec) |
 | `netheriteDropChance` | 0.5 | Chance to drop a netherite ingot on death |
 
@@ -176,7 +181,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.2.7 (latest) — all three loaders
+### v1.3.0 — "The Venom Update" — all three loaders
+- **NEW: the POISON variant.** ☠️ A third spider — the pale sickly green of a bottled Potion of Poison (slime-skinned, squelching footsteps), 20% of spawns by default (`poisonVariantChance`; still only ever ONE spider). And it fights like a **real tarantula**: in striking range it **rears up with its front legs lifted high** — exactly the way a real tarantula telegraphs — then **LUNGES**, hurling itself at you, front legs still raised. Only a bite landed out of that lunge connects: **3 hearts** (`poisonAttackDamageHearts`) plus **Poison II for 30 seconds** (`poisonEffectSeconds`). 500 HP, no armor (`poisonMaxHealth`). Everything else — the netherite trophy, the scurry, distance sizing, the squeeze, water growth — works exactly like its cousins.
+
+### v1.2.7 — all three loaders
 - **The great health rebalance: no more 1000 flat HP.** The two variants now fight very differently. The **Netherite variant drops to 350 HP but wears what it's made of — the exact stats of a FULL suit of netherite armor** (20 armor, 12 toughness, knockback resistance): it shrugs off most of every sword blow, but armor-piercing weapons finally have a real target. The **Camo variant keeps 600 HP with no armor** — much easier to put down… if you can find it. 🌿 Old `maxHealth` configs migrate automatically into the new per-variant `netheriteMaxHealth` / `camoMaxHealth` keys (a customized value carries over; defaults upgrade).
 
 ### v1.2.5 — all three loaders

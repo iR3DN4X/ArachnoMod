@@ -17,6 +17,7 @@ import org.joml.Vector3d
 
 private val NETHERITE: BlockState get() = Blocks.NETHERITE_BLOCK.defaultBlockState()
 private val MOSS: BlockState get() = Blocks.MOSS_BLOCK.defaultBlockState()
+private val SLIME: BlockState get() = Blocks.SLIME_BLOCK.defaultBlockState()
 
 private fun equalLength(segmentCount: Int, length: Double): List<SegmentPlan> =
     List(segmentCount) { SegmentPlan(length, FORWARD_VECTOR) }
@@ -146,6 +147,18 @@ fun defaultSpider(): SpiderOptions {
 fun camoSpider(): SpiderOptions {
     val o = defaultSpider()
     applyLineLegModel(o.bodyPlan, MOSS)   // re-skin every leg segment (replaces the netherite model)
+    return o
+}
+
+/**
+ * The POISON variant: identical geometry/gait to [defaultSpider], skinned in slime block — the
+ * closest vanilla block to the Potion of Poison's pale sickly green (#87A363), and translucent
+ * like the brew itself. Its tarantula rear-up/lunge/venom-bite behaviour lives in
+ * SpiderBody.beginLunge and SpiderMob's poison melee branch — presets are looks + gait only.
+ */
+fun poisonSpider(): SpiderOptions {
+    val o = defaultSpider()
+    applyLineLegModel(o.bodyPlan, SLIME)
     return o
 }
 

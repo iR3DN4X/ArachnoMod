@@ -163,6 +163,9 @@ object Config {
     val CAMO_VARIANT_CHANCE = define("camoVariantChance", 0.25, 0.0, 1.0,
         "Chance (0.0-1.0) that a naturally-spawned spider is the mossy CAMO variant instead",
         "of the netherite one. There is still only ever ONE spider in the world at a time.")
+    val POISON_VARIANT_CHANCE = define("poisonVariantChance", 0.2, 0.0, 1.0,
+        "Chance (0.0-1.0) that a spawned spider is the venomous POISON variant (rolled BEFORE",
+        "the camo chance; applies to natural spawns and spawn eggs alike).")
 
     // ---- Chase & speed ---------------------------------------------------------------------
     val CHASE_DISTANCE = define("chaseDistance", 64.0, 8.0, 256.0,
@@ -239,8 +242,15 @@ object Config {
     val CAMO_MAX_HEALTH = define("camoMaxHealth", 600.0, 1.0, 1000000.0,
         "Max health of the CAMO variant (default 600). No armor - easier to put down, if you",
         "can find it.")
+    val POISON_MAX_HEALTH = define("poisonMaxHealth", 500.0, 1.0, 1000000.0,
+        "Max health of the POISON variant (default 500). No armor - its danger is the bite.")
     val ATTACK_DAMAGE_HEARTS = define("attackDamageHearts", 6.0, 0.0, 100.0,
         "Melee damage in HEARTS per hit.")
+    val POISON_ATTACK_DAMAGE_HEARTS = define("poisonAttackDamageHearts", 3.0, 0.0, 100.0,
+        "The POISON variant's bite damage in HEARTS - weaker than the other variants, but",
+        "every bite that lands also injects Poison II (see poisonEffectSeconds).")
+    val POISON_EFFECT_SECONDS = define("poisonEffectSeconds", 30.0, 0.0, 3600.0,
+        "How long (seconds) the Poison II from the poison variant's bite lasts.")
     val ATTACK_COOLDOWN_TICKS = define("attackCooldownTicks", 20, 1, 400,
         "Ticks between melee hits (20 = one hit per second).")
     val NETHERITE_DROP_CHANCE = define("netheriteDropChance", 0.5, 0.0, 1.0,

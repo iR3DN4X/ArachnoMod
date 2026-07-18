@@ -4,7 +4,7 @@ license = "Source-available custom license (free to play; no commercial reuse, n
 
 [[mods]]
 modId = "arachnomod"
-version = "1.2.7"
+version = "1.3.0"
 displayName = "ArachnoMod (Spider Animation)"
 authors = "iR3DN4X"
 credits = "Based on TheCymaera/minecraft-spider"

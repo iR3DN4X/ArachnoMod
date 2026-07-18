@@ -28,6 +28,13 @@ class SpiderBodyHitGroundEvent(val spider: SpiderBody)
 // enough not to slam into the ground (the pull tapers to the exact remaining gap near arrival).
 private const val MAX_DESCENT_SPEED = 1.2
 
+// The poison variant's tarantula strike (see beginLunge/updateLunge): telegraph ticks with the
+// front legs raised, then the forward-burst ticks that form the bite window, and the impulse
+// speed (blocks/tick at size 1, scaled by the spider's size).
+private const val LUNGE_REAR_TICKS = 8
+private const val LUNGE_STRIKE_TICKS = 6
+private const val LUNGE_SPEED = 0.9
+
 /*
  * Ported from `spider/components/body/SpiderBody.kt`. Bukkit World/Vector/Location replaced with
  * ServerLevel / Vector3d / (level + position + orientation). The physics, gait blending, support
@@ -75,6 +82,11 @@ class SpiderBody(
     private var groomingTimer = 0
     private val groomingOriginalPos0 = Vector3d()
     private val groomingOriginalPos1 = Vector3d()
+
+    // Lunge state (the poison variant's tarantula strike, see updateLunge): 0 = idle, else ticks
+    // remaining across both phases (rear-up telegraph, then the forward strike burst).
+    private var lungeTimer = 0
+    private val lungeDirection = Vector3d()
 
     // The spider's current absolute physical size (1.0 = as spawned). Driven by SpiderMob from the
     // nearest player's distance (close = small, far = large). Scales the body plan + gait so the IK
@@ -315,10 +327,78 @@ class SpiderBody(
         for (leg in updateOrder) leg.updateMemo()
         for (leg in updateOrder) leg.update()
 
-        // Idle grooming overrides the front legs' pose, so it must run AFTER the leg updates.
+        // Idle grooming and the lunge both override the front legs' pose, so they must run
+        // AFTER the leg updates (they never overlap - each guards against the other).
         updateGrooming()
+        updateLunge()
 
         updatePreferredAngles()
+    }
+
+    // ---- The lunge (the poison variant's tarantula strike) -----------------------------------
+    // Real tarantulas rear up with their front legs raised, THEN strike. beginLunge starts the
+    // sequence: LUNGE_REAR_TICKS of telegraph (the front legs sweep up and forward while
+    // calcPreferredY lifts the body - the threat pose), then one hard velocity impulse hurls the
+    // body at the target for LUNGE_STRIKE_TICKS - the only window in which SpiderMob lets the
+    // poison bite land. Same trick as grooming: front legs isDisabled + endEffector steering;
+    // the renderer re-solves each leg chain from its end effector, so posing the tips is all it
+    // takes.
+
+    val isLunging get() = lungeTimer > 0
+
+    /** The forward-burst phase — the bite window. */
+    val isLungeStriking get() = lungeTimer in 1..LUNGE_STRIKE_TICKS
+
+    fun beginLunge(direction: Vector3d) {
+        if (lungeTimer > 0 || groomingTimer > 0) return
+        if (legs.size < 2) return
+        lungeDirection.set(direction.x, 0.0, direction.z)
+        if (lungeDirection.lengthSquared() < 1.0e-6) return
+        lungeDirection.normalize()
+        lungeTimer = LUNGE_REAR_TICKS + LUNGE_STRIKE_TICKS
+        legs[0].isDisabled = true
+        legs[1].isDisabled = true
+    }
+
+    /** End the sequence (bite landed, or it played out): give the front legs back to the gait,
+     *  which replants them with normal steps — no snap. */
+    fun endLunge() {
+        lungeTimer = 0
+        legs.getOrNull(0)?.isDisabled = false
+        legs.getOrNull(1)?.isDisabled = false
+    }
+
+    private fun updateLunge() {
+        if (lungeTimer <= 0) return
+        val leg0 = legs.getOrNull(0)
+        val leg1 = legs.getOrNull(1)
+        if (leg0 == null || leg1 == null) { endLunge(); return }
+
+        // Telegraph over -> one hard impulse toward the target, with a slight hop so the strike
+        // leaves the ground. Ground drag bleeds it off across the strike window.
+        if (lungeTimer == LUNGE_STRIKE_TICKS + 1) {
+            val burst = LUNGE_SPEED * sizeScale.coerceIn(0.6, 2.5)
+            velocity.add(Vector3d(lungeDirection).mul(burst))
+            velocity.y += 0.3 * burst
+        }
+
+        // The front legs are held up and forward of the body for the whole sequence — the
+        // threat pose — swept smoothly toward the raised target during the telegraph and riding
+        // along with the body through the strike. legs[0] = front-right, legs[1] = front-left.
+        val up = UP_VECTOR
+        val right = Vector3d(lungeDirection).cross(up, Vector3d()).normalize()
+        for (i in 0..1) {
+            val leg = if (i == 0) leg0 else leg1
+            val sideDir = if (i == 0) 1.0 else -1.0
+            val target = position.copy()
+                .add(Vector3d(lungeDirection).mul(0.9 * sizeScale))
+                .add(up.copy().mul(0.8 * sizeScale))
+                .add(right.copy().mul(0.35 * sideDir * sizeScale))
+            leg.endEffector.lerp(target, 0.35)
+        }
+
+        lungeTimer--
+        if (lungeTimer == 0) endLunge()
     }
 
     // ---- Idle grooming (contributed by NetherySiloX; completed & integrated here) ------------
@@ -455,6 +535,10 @@ class SpiderBody(
             // Lean the body down toward the front legs while grooming.
             if (groomingTimer > 0) targetY -= groomingSmoothT() * 0.15 * sizeScale
         }
+
+        // Rear up while a lunge telegraphs: the body lifts as the front legs rise — the
+        // tarantula threat pose right before the strike (see updateLunge).
+        if (lungeTimer > LUNGE_STRIKE_TICKS) targetY += 0.22 * sizeScale
 
         // THE SQUEEZE descent: sink toward the squeeze target instead of hovering at rim height.
         // The straight-down raycast finds the real floor beneath the body — the hole bottom once
