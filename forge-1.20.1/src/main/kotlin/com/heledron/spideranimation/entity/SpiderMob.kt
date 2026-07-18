@@ -83,7 +83,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // in ensureBody (attributes are built before configs are guaranteed loaded).
         fun createAttributes(): AttributeSupplier.Builder =
             createMonsterAttributes()
-                .add(Attributes.MAX_HEALTH, 1000.0)
+                .add(Attributes.MAX_HEALTH, 600.0)
                 .add(Attributes.MOVEMENT_SPEED, 0.3)
                 .add(Attributes.ATTACK_DAMAGE, 12.0)
                 .add(Attributes.FOLLOW_RANGE, 64.0)
@@ -179,6 +179,16 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // Safe to top up here: this runs once per mob, and spiders are never save/reloaded.
         getAttribute(Attributes.MAX_HEALTH)?.baseValue = Config.MAX_HEALTH.get()
         health = maxHealth
+
+        // The NETHERITE variant wears what it's made of: the exact stats of a FULL suit of
+        // netherite armor — 20 armor (3+8+6+3), 12 toughness (3x4), 0.4 knockback resistance
+        // (0.1x4). The camo variant is bare moss: health alone. (Knockback resistance is moot
+        // while the simulation pins the position, but it keeps the suit honest.)
+        if (variant == SpiderVariant.NETHERITE) {
+            getAttribute(Attributes.ARMOR)?.baseValue = 20.0
+            getAttribute(Attributes.ARMOR_TOUGHNESS)?.baseValue = 12.0
+            getAttribute(Attributes.KNOCKBACK_RESISTANCE)?.baseValue = 0.4
+        }
 
         return newBody
     }

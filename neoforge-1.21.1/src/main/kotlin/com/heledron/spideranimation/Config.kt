@@ -76,11 +76,18 @@ object Config {
     // search — "the spider never shows up". Runs on the RAW file BEFORE the spec loads it
     // (call migrateConfigFile from the mod constructor, before registerConfig). Each migration
     // upgrades a value ONLY if it still equals its OLD default — customization is never touched.
-    private const val CONFIG_VERSION = 2
-    private val MIGRATIONS: List<Triple<String, Any, Any>> = listOf(
-        Triple("spawnMinMinutes", 5.0, 1.0),     // v1.1.5: the hunt begins one minute in
-        Triple("spawnMaxMinutes", 30.0, 1.0),
-        Triple("spawnAngleAttempts", 12, 24),    // v1.1.4: reliable rough-terrain spawning
+    private const val CONFIG_VERSION = 3
+    // Grouped by the config version that INTRODUCED each batch: a file older than that
+    // version gets the batch applied (each value still only if it sits at its old default).
+    private val MIGRATIONS: Map<Int, List<Triple<String, Any, Any>>> = mapOf(
+        2 to listOf(
+            Triple("spawnMinMinutes", 5.0, 1.0),     // v1.1.5: the hunt begins one minute in
+            Triple("spawnMaxMinutes", 30.0, 1.0),
+            Triple("spawnAngleAttempts", 12, 24),    // v1.1.4: reliable rough-terrain spawning
+        ),
+        3 to listOf(
+            Triple("maxHealth", 1000.0, 600.0),      // v1.2.6: health nerf; netherite wears armor now
+        ),
     )
 
     fun migrateConfigFile(configDir: java.nio.file.Path) {
@@ -93,8 +100,9 @@ object Config {
             val hasContent = it.get<Any?>("spawnMinMinutes") != null
             val fileVersion = (it.get<Any?>("configVersion") as? Number)?.toInt()
                 ?: if (hasContent) 1 else CONFIG_VERSION   // content but no version = pre-1.1.6 file
-            if (fileVersion < 2) {
-                for ((path, old, new) in MIGRATIONS) {
+            for ((sinceVersion, batch) in MIGRATIONS) {
+                if (fileVersion >= sinceVersion) continue
+                for ((path, old, new) in batch) {
                     val current = it.get<Any?>(path)
                     val stillAtOldDefault = when (old) {
                         is Double -> (current as? Number)?.toDouble() == old
@@ -212,8 +220,9 @@ object Config {
         "deep water will stay small and drown.")
 
     // ---- Combat & drops --------------------------------------------------------------------
-    val MAX_HEALTH = define("maxHealth", 1000.0, 1.0, 1000000.0,
-        "The spider's maximum health (1000 = a boss-grade fight).")
+    val MAX_HEALTH = define("maxHealth", 600.0, 1.0, 1000000.0,
+        "The spider's maximum health (default 600). The netherite variant is additionally",
+        "protected by the stats of a full netherite armor suit; the camo variant is not.")
     val ATTACK_DAMAGE_HEARTS = define("attackDamageHearts", 6.0, 0.0, 100.0,
         "Melee damage in HEARTS per hit.")
     val ATTACK_COOLDOWN_TICKS = define("attackCooldownTicks", 20, 1, 400,

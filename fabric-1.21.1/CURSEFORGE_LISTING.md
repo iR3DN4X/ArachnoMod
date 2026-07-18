@@ -2,7 +2,7 @@
 
 **A giant, procedurally-animated spider that hunts you across the world.** One roams at a time, returning two Minecraft days after each defeat. It towers over the trees and charges in at incredible speed the farther away you are, then shrinks down as it closes for a **6-heart bite**. Its eight legs are driven by real **FABRIK inverse-kinematics**, drawn entirely with vanilla **BlockDisplay** entities — so it walks, scurries, and clambers like nothing else in Minecraft.
 
-Built on **1000 HP** of boss-grade menace. Kill it and it *might* just drop the netherite it's made of.
+Built on **600 HP of boss-grade menace** — and the netherite one **wears the stats of a full netherite armor suit**. Kill it and it *might* just drop the netherite it's made of.
 
 ---
 
@@ -37,13 +37,13 @@ ArachnoMod now runs on **three loaders**:
 - **One spider, always hunting.** Exactly one exists at a time. It wanders the world looking for the nearest player within its chase distance.
 - **Wander / Alert / Chase AI.** When no one's around, the spider calmly **patrols** its territory — and it **pre-scans every patrol route block-by-block** before walking it, planning around lava, water, chasms, and cliff edges instead of tumbling into them. The instant it spots you it **freezes and snaps to face you** — one heart-stopping beat — then **charges**. It keeps chasing until you truly escape (wider give-up radius than its detection radius, so no flickering at the boundary). Optional `hostileOnlyAtNight` mode makes it docile in daylight like a vanilla spider.
 - **The hunt has pacing.** The first spider arrives **about a minute into a session** — no long wait for the main event. **Slay it and you've earned two full Minecraft days (40 min) of real peace** — no respawn treadmill. And if you hide in Peaceful? It returns **one minute after peace ends**. Peace has a price. 😈 (All three timers configurable.)
-- **Idle life.** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the thousand-HP murder kaiju is, briefly, adorable.
+- **Idle life.** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the murder kaiju is, briefly, adorable.
 - **The CAMO variant.** A second spider that can naturally spawn (25% by default, still only ONE spider ever) with **ACTIVE CAMOUFLAGE**: every leg continuously repaints itself as **the actual block it's standing on** — grass legs in the meadow, sand legs on the beach, stone legs in the mountains, changing leg-by-leg as it walks. Its footsteps play **the real step sound of the block underfoot**, exactly like player footsteps — it crunches on gravel, thuds on dirt, and goes whisper-quiet on wool. You won't see it coming. You might not hear it either.
 - **Safe spawning.** Spawns (and patrol routes) are validated for solid, dry ground — no more spiders in the void, over oceans, or inside SkyBlock gaps. Keeps the configured spawn distance whenever possible, preferring farther over closer; never pops up in your face.
 - **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 - **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
 - **Charges faster the farther it is** — up to **8× speed** — so distance is no safety.
-- **Boss-grade fight.** 1000 HP and a 6-heart melee hit. Bring friends.
+- **Boss-grade fight.** 600 HP, a 6-heart melee hit — and the **netherite variant wears the exact stats of a full netherite armor suit** (20 armor, 12 toughness), shrugging off most of every blow. The mossy camo variant has no armor: softer, but you have to find it first. Bring friends.
 - **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff) — the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
 - **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
 - **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
@@ -127,7 +127,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 
 | Key | Default | Meaning |
 |---|---|---|
-| `maxHealth` | 1000.0 | The spider's max health |
+| `maxHealth` | 600.0 | Max health of both variants (netherite additionally wears full netherite-suit armor stats) |
 | `attackDamageHearts` | 6.0 | Melee damage in hearts per hit |
 | `attackCooldownTicks` | 20 | Ticks between melee hits (20 = 1/sec) |
 | `netheriteDropChance` | 0.5 | Chance to drop a netherite ingot on death |
@@ -175,7 +175,10 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.2.5 (latest) — all three loaders
+### v1.2.6 (latest) — all three loaders
+- **Health rebalanced: 1000 → 600 HP for both variants** (`maxHealth`; existing configs migrate automatically unless you customized the value). In exchange, the **Netherite variant now wears what it's made of — the exact stats of a FULL suit of netherite armor**: 20 armor, 12 toughness, knockback resistance. Against typical weapons that's *tankier* than the old 1000 flat HP ever was. The **Camo variant gets no armor** — much easier to put down… if you can find it. 🌿
+
+### v1.2.5 — all three loaders
 - **The spider no longer drowns while you laugh at it from a boat.** 🌊 Distance-based sizing kept it *small* right when it waded in after you — so it sank to the lake floor and drowned while you floated above. Now, standing in water of any depth, it **grows just big enough for its body to ride above the surface** and keeps coming. Works in ponds, rivers, lakes and deep oceans (it will exceed `maxSize` if the ocean demands it). New config toggle **`growInWater`** (default **true**); set it to `false` if you *want* deep water to stay a drowning trap.
 
 ### v1.2.4 — all three loaders

@@ -20,7 +20,7 @@ plugins {
 }
 
 group = 'com.heledron'
-version = '1.2.5'
+version = '1.2.6'
 
 base {
     archivesName = 'arachnomod_forge_1.20.1'

@@ -27,7 +27,7 @@ plugins {
 }
 
 group = 'com.heledron'
-version = '1.2.5'
+version = '1.2.6'
 
 base {
     archivesName = 'arachnomod_fabric_1.21.1'
