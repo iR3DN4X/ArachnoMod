@@ -175,9 +175,12 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         body = newBody
         SpiderSpawnManager.notifyAlive(this)   // register as THE spider (enforces only-one)
 
-        // Apply the configured max health per-instance (attributes register before configs load).
+        // Apply the configured max health per-instance (attributes register before configs load;
+        // health is per-VARIANT: the armored netherite runs leaner than the bare camo).
         // Safe to top up here: this runs once per mob, and spiders are never save/reloaded.
-        getAttribute(Attributes.MAX_HEALTH)?.baseValue = Config.MAX_HEALTH.get()
+        getAttribute(Attributes.MAX_HEALTH)?.baseValue =
+            if (variant == SpiderVariant.NETHERITE) Config.NETHERITE_MAX_HEALTH.get()
+            else Config.CAMO_MAX_HEALTH.get()
         health = maxHealth
 
         // The NETHERITE variant wears what it's made of: the exact stats of a FULL suit of

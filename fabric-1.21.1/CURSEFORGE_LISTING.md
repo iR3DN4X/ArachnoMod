@@ -2,7 +2,7 @@
 
 **A giant, procedurally-animated spider that hunts you across the world.** One roams at a time, returning two Minecraft days after each defeat. It towers over the trees and charges in at incredible speed the farther away you are, then shrinks down as it closes for a **6-heart bite**. Its eight legs are driven by real **FABRIK inverse-kinematics**, drawn entirely with vanilla **BlockDisplay** entities — so it walks, scurries, and clambers like nothing else in Minecraft.
 
-Built on **600 HP of boss-grade menace** — and the netherite one **wears the stats of a full netherite armor suit**. Kill it and it *might* just drop the netherite it's made of.
+A boss-grade fight either way: the **netherite hunter packs 350 HP inside the stats of a full netherite armor suit**; the mossy **camo stalker runs 600 HP with no armor at all**. Kill it and it *might* just drop the netherite it's made of.
 
 ---
 
@@ -43,7 +43,7 @@ ArachnoMod now runs on **three loaders**:
 - **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 - **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
 - **Charges faster the farther it is** — up to **8× speed** — so distance is no safety.
-- **Boss-grade fight.** 600 HP, a 6-heart melee hit — and the **netherite variant wears the exact stats of a full netherite armor suit** (20 armor, 12 toughness), shrugging off most of every blow. The mossy camo variant has no armor: softer, but you have to find it first. Bring friends.
+- **Boss-grade fight.** A 6-heart melee hit either way. The **netherite variant**: 350 HP wrapped in the **exact stats of a full netherite armor suit** (20 armor, 12 toughness) — it shrugs off most of every blow. The **camo variant**: 600 HP, no armor — softer, but you have to find it first. Bring friends.
 - **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff) — the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
 - **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
 - **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
@@ -63,7 +63,7 @@ All under `/spider`:
 | `/spider release` | Dismisses your personal spider. | Anyone |
 | `/spider chasedistance <blocks>` | Sets how far (8–256) the **wild** spider spots and chases players. **Saves into the config file.** | Ops (permission level 2) |
 | `/spider config <key> get` | Shows any config value in chat. | Ops (permission level 2) |
-| `/spider config <key> set <value>` | **Live-edits ANY of the 40 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
+| `/spider config <key> set <value>` | **Live-edits ANY of the 41 config values in-game** — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. | Ops (permission level 2) |
 
 ---
 
@@ -127,7 +127,8 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 
 | Key | Default | Meaning |
 |---|---|---|
-| `maxHealth` | 600.0 | Max health of both variants (netherite additionally wears full netherite-suit armor stats) |
+| `netheriteMaxHealth` | 350.0 | Max health of the netherite variant (it also wears full netherite-suit armor stats) |
+| `camoMaxHealth` | 600.0 | Max health of the camo variant (no armor) |
 | `attackDamageHearts` | 6.0 | Melee damage in hearts per hit |
 | `attackCooldownTicks` | 20 | Ticks between melee hits (20 = 1/sec) |
 | `netheriteDropChance` | 0.5 | Chance to drop a netherite ingot on death |
@@ -175,8 +176,8 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.2.6 (latest) — all three loaders
-- **Health rebalanced: 1000 → 600 HP for both variants** (`maxHealth`; existing configs migrate automatically unless you customized the value). In exchange, the **Netherite variant now wears what it's made of — the exact stats of a FULL suit of netherite armor**: 20 armor, 12 toughness, knockback resistance. Against typical weapons that's *tankier* than the old 1000 flat HP ever was. The **Camo variant gets no armor** — much easier to put down… if you can find it. 🌿
+### v1.2.7 (latest) — all three loaders
+- **The great health rebalance: no more 1000 flat HP.** The two variants now fight very differently. The **Netherite variant drops to 350 HP but wears what it's made of — the exact stats of a FULL suit of netherite armor** (20 armor, 12 toughness, knockback resistance): it shrugs off most of every sword blow, but armor-piercing weapons finally have a real target. The **Camo variant keeps 600 HP with no armor** — much easier to put down… if you can find it. 🌿 Old `maxHealth` configs migrate automatically into the new per-variant `netheriteMaxHealth` / `camoMaxHealth` keys (a customized value carries over; defaults upgrade).
 
 ### v1.2.5 — all three loaders
 - **The spider no longer drowns while you laugh at it from a boat.** 🌊 Distance-based sizing kept it *small* right when it waded in after you — so it sank to the lake floor and drowned while you floated above. Now, standing in water of any depth, it **grows just big enough for its body to ride above the surface** and keeps coming. Works in ponds, rivers, lakes and deep oceans (it will exceed `maxSize` if the ocean demands it). New config toggle **`growInWater`** (default **true**); set it to `false` if you *want* deep water to stay a drowning trap.

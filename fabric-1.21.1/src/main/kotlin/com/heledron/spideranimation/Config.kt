@@ -84,7 +84,7 @@ object Config {
     // older version silently keeps the old pacing (5-30 min first spawn) and the weaker spawn
     // search — "the spider never shows up". Each migration upgrades a value ONLY if it still
     // equals its OLD default, so deliberate customization is never overwritten.
-    private const val CONFIG_VERSION = 3
+    private const val CONFIG_VERSION = 4
     // Grouped by the config version that INTRODUCED each batch: a file older than that
     // version gets the batch applied (each value still only if it sits at its old default).
     private val MIGRATIONS: Map<Int, List<Triple<String, Any, Any>>> = mapOf(
@@ -113,6 +113,18 @@ object Config {
                 }
                 if (stillAtOldDefault) cfg.set<Any?>(path, new)
             }
+        }
+        // v4 (mod v1.2.7): maxHealth split into per-variant netheriteMaxHealth/camoMaxHealth.
+        // A CUSTOMIZED old value carries into both new keys; a default value (600, or a
+        // pre-v3 1000 the batch above just normalized to 600) is dropped so the new
+        // per-variant defaults apply.
+        if (fileVersion < 4) {
+            val old = (cfg.get<Any?>("maxHealth") as? Number)?.toDouble()
+            if (old != null && old != 600.0) {
+                cfg.set<Any?>("netheriteMaxHealth", old)
+                cfg.set<Any?>("camoMaxHealth", old)
+            }
+            cfg.remove<Any?>("maxHealth")
         }
         cfg.set<Any?>("configVersion", CONFIG_VERSION)
         cfg.setComment("configVersion", " Internal config-format version - do not edit.")
@@ -238,9 +250,12 @@ object Config {
                 "deep water will stay small and drown."))
 
     // ---- Combat & drops --------------------------------------------------------------------
-    val MAX_HEALTH = DoubleValue("maxHealth", 600.0, 1.0, 1000000.0,
-        comment("The spider's maximum health (default 600). The netherite variant is additionally",
-                "protected by the stats of a full netherite armor suit; the camo variant is not."))
+    val NETHERITE_MAX_HEALTH = DoubleValue("netheriteMaxHealth", 350.0, 1.0, 1000000.0,
+        comment("Max health of the NETHERITE variant (default 350). It also wears the stats of a full",
+                "netherite armor suit, so it soaks far more weapon damage than the raw number suggests."))
+    val CAMO_MAX_HEALTH = DoubleValue("camoMaxHealth", 600.0, 1.0, 1000000.0,
+        comment("Max health of the CAMO variant (default 600). No armor - easier to put down, if you",
+                "can find it."))
     val ATTACK_DAMAGE_HEARTS = DoubleValue("attackDamageHearts", 6.0, 0.0, 100.0,
         comment("Melee damage in HEARTS per hit."))
     val ATTACK_COOLDOWN_TICKS = IntValue("attackCooldownTicks", 20, 1, 400,
