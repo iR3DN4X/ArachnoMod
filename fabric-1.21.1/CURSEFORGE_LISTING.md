@@ -2,7 +2,7 @@
 
 **A giant, procedurally-animated spider that hunts you across the world.** One roams at a time, returning two Minecraft days after each defeat. It towers over the trees and charges in at incredible speed the farther away you are, then shrinks down as it closes for a **6-heart bite**. Its eight legs are driven by real **FABRIK inverse-kinematics**, drawn entirely with vanilla **BlockDisplay** entities — so it walks, scurries, and clambers like nothing else in Minecraft.
 
-A boss-grade fight either way: the **netherite hunter packs 350 HP inside the stats of a full netherite armor suit**; the mossy **camo stalker runs 600 HP with no armor at all**. Kill it and it *might* just drop the netherite it's made of.
+A boss-grade fight whichever face it wears: the **netherite hunter** packs 350 HP inside the stats of a full netherite armor suit; the mossy **camo stalker** runs 600 unarmored HP and hopes you never spot it; the warped **poison striker** carries 500 — and a venomous tarantula lunge. Kill it and it *might* just drop the netherite it's made of.
 
 ---
 
@@ -12,7 +12,8 @@ A boss-grade fight either way: the **netherite hunter packs 350 HP inside the st
 
 - **hunts you** — it spots you from far away, stares you down, and charges;
 - is **enormous** — up to ~16 blocks tall, towering over the trees as it closes in;
-- can be **camouflaged** — the CAMO variant blends into the terrain and sounds like ordinary footsteps, so it can get *very* close before you notice it.
+- can be **camouflaged** — the CAMO variant blends into the terrain and sounds like ordinary footsteps, so it can get *very* close before you notice it;
+- can **pounce** — the POISON variant rears up with its front legs raised and *lunges* at you, exactly like a real tarantula strike.
 
 There is no "cute mode." If realistic spider movement is a problem for you or the people on your server, this may genuinely be an uncomfortable experience — consider `hostileOnlyAtNight = true`, lowering `maxSize`, or sitting this one out. You have been warned. 🕸️
 
@@ -44,7 +45,11 @@ ArachnoMod now runs on **three loaders**:
 - **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 - **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
 - **Charges faster the farther it is** — up to **8× speed** — so distance is no safety.
-- **Boss-grade fight.** A 6-heart melee hit either way. The **netherite variant**: 350 HP wrapped in the **exact stats of a full netherite armor suit** (20 armor, 12 toughness) — it shrugs off most of every blow. The **camo variant**: 600 HP, no armor — softer, but you have to find it first. Bring friends.
+- **It follows you between dimensions.** 🌀 Portal away and a few seconds later it re-emerges near you — the Nether, the End, **or any modded dimension**: the follow keys on where the players are, not which portal was used. There is still only ever ONE spider.
+- **No hole is safe.** Dig in and it applies **constant pressure**, re-evaluating every tick — the instant a block breaks or a ramp opens, it pours through. And a 1×1×1 hidey-hole? It **SQUEEZES**: shrinks below its minimum size, slips down the shaft after you, bites, and regrows on the way out (`squeezeSize`).
+- **No lake is safe.** Deep water used to drown it while you watched from a boat. Now it **grows just tall enough to ride above the surface** — pond, river, or open ocean — and keeps coming. (`growInWater`, on by default; turn it off if you want water to stay a weakness.)
+- **Lava sorts the variants.** 🔥 The **netherite** spider is fireproof like the gear it's made of — it *wades through lava lakes* unburnt and unbothered. The **camo and poison** variants burn — visibly, flames licking up their legs.
+- **Boss-grade fight.** The **netherite variant**: 350 HP wrapped in the **exact stats of a full netherite armor suit** (20 armor, 12 toughness) — it shrugs off most of every blow, and lands a **6-heart bite**. The **camo variant**: 600 HP, no armor, same bite — softer, but you have to find it first. The **poison variant**: 500 HP, and the venom does the talking. Bring friends.
 - **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it *is* made of the stuff) — the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
 - **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
 - **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
@@ -181,7 +186,7 @@ So there is simply nothing for a morph mod to grab onto. It can copy a model; it
 
 ## 📜 Full changelog
 
-### v1.3.1 — "The Venom Update" — all three loaders
+### v1.3.1 (latest) — "The Venom Update" — all three loaders
 - **NEW: the POISON variant.** ☠️ A third spider — sheathed in the eerie blue-teal of **warped wart block**, footsteps squishing like the Nether fungus it's made of, 20% of spawns by default (`poisonVariantChance`; still only ever ONE spider). And it fights like a **real tarantula**: in striking range it **rears up with its front legs lifted high** — exactly the way a real tarantula telegraphs — then **LUNGES**, hurling itself at you, front legs still raised. Only a bite landed out of that lunge connects: **3 hearts** (`poisonAttackDamageHearts`) plus **Poison II for 30 seconds** (`poisonEffectSeconds`). 500 HP, no armor (`poisonMaxHealth`). Everything else — the netherite trophy, the scurry, distance sizing, the squeeze, water growth — works exactly like its cousins.
 
 ### v1.2.7 — all three loaders
