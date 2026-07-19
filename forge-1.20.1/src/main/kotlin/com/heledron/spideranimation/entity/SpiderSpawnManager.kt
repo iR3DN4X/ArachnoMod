@@ -48,6 +48,41 @@ object SpiderSpawnManager {
     private var current: SpiderMob? = null
     private var respawnTimer = -1   // ticks until next spawn; < 0 = not yet scheduled
 
+    // WHAT the armed countdown is (so a live config change can recompute the right one) and how
+    // many ticks of it have already been served.
+    private enum class ScheduleKind { NONE, FIRST_SPAWN, KILL_COOLDOWN, PEACEFUL_EXIT, RETRY }
+    private var scheduleKind = ScheduleKind.NONE
+    private var scheduleElapsed = 0
+
+    private fun arm(ticks: Int, kind: ScheduleKind) {
+        respawnTimer = ticks
+        scheduleKind = kind
+        scheduleElapsed = 0
+    }
+
+    /**
+     * Called after every `/spider config <key> set`. If the changed key governs the countdown
+     * that is CURRENTLY armed, re-arm it from the new values, CREDITING the time already served
+     * — so timing changes apply immediately instead of only after a relog (the old behaviour
+     * that made custom spawn timers look broken). Raising a half-elapsed cooldown extends it by
+     * the difference; lowering it below the served time spawns promptly. An un-armed timer needs
+     * nothing: the next arm always reads the config live.
+     */
+    fun onConfigSet(path: String) {
+        if (respawnTimer < 0) return
+        val newTotal = when {
+            scheduleKind == ScheduleKind.FIRST_SPAWN &&
+                (path == "spawnMinMinutes" || path == "spawnMaxMinutes") -> rollRespawnDelay()
+            scheduleKind == ScheduleKind.KILL_COOLDOWN &&
+                path == "respawnAfterKillMinutes" -> killRespawnTicks()
+            scheduleKind == ScheduleKind.PEACEFUL_EXIT &&
+                path == "peacefulExitSpawnMinutes" ->
+                (Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
+            else -> return
+        }
+        respawnTimer = (newTotal - scheduleElapsed).coerceAtLeast(1)
+    }
+
     /**
      * Called by every [SpiderMob] on its first tick. Enforces the single-spider rule: if another one
      * is already alive (e.g. spawned from an egg) the older one is removed, so there are never two.
@@ -63,6 +98,8 @@ object SpiderSpawnManager {
     fun reset() {
         current = null
         respawnTimer = -1
+        scheduleKind = ScheduleKind.NONE
+        scheduleElapsed = 0
         pendingPeacefulExit = false
         abandonedTicks = 0
         janitorTimer = 0
@@ -120,7 +157,8 @@ object SpiderSpawnManager {
             // Killed / discarded: the trophy hunt is over — schedule the LONG post-kill cooldown
             // (default 40 min = 2 Minecraft days). Exception: if we were just in Peaceful, this
             // "discard" was the peaceful despawn, not a kill — leave it to the fast timer below.
-            respawnTimer = if (pendingPeacefulExit) -1 else killRespawnTicks()
+            if (pendingPeacefulExit) respawnTimer = -1
+            else arm(killRespawnTicks(), ScheduleKind.KILL_COOLDOWN)
         }
 
         val players = server.playerList.players
@@ -132,26 +170,29 @@ object SpiderSpawnManager {
         if (pendingPeacefulExit) {
             pendingPeacefulExit = false
             if (respawnTimer < 0) {
-                respawnTimer = (Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
+                arm((Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1),
+                    ScheduleKind.PEACEFUL_EXIT)
                 return
             }
         }
 
         if (respawnTimer < 0) {
             // No spider has existed yet this session (world load / reset): the FIRST-spawn roll.
-            respawnTimer = rollRespawnDelay()
+            arm(rollRespawnDelay(), ScheduleKind.FIRST_SPAWN)
             return
         }
+        scheduleElapsed++
         if (--respawnTimer > 0) return
 
-        respawnTimer = if (spawnNear(server, players.random())) -1 else RETRY_TICKS
+        if (spawnNear(server, players.random())) respawnTimer = -1
+        else arm(RETRY_TICKS, ScheduleKind.RETRY)
     }
 
     private fun relocateNear(server: MinecraftServer, lastSpider: SpiderMob) {
         val players = server.playerList.players
-        if (players.isEmpty()) { respawnTimer = RETRY_TICKS; return }
+        if (players.isEmpty()) { arm(RETRY_TICKS, ScheduleKind.RETRY); return }
         val nearest = players.minByOrNull { it.distanceToSqr(lastSpider.x, lastSpider.y, lastSpider.z) } ?: return
-        if (!spawnNear(server, nearest)) respawnTimer = RETRY_TICKS
+        if (!spawnNear(server, nearest)) arm(RETRY_TICKS, ScheduleKind.RETRY)
     }
 
     /**
@@ -167,7 +208,7 @@ object SpiderSpawnManager {
         if (players.isEmpty()) return
         current = null            // detach BEFORE discarding so the removal isn't read as a kill
         oldSpider.discard()       // alive -> no trophy (see SpiderMob.remove)
-        if (!trySpawnNear(players.random())) respawnTimer = RETRY_TICKS   // e.g. mid-lava-ocean: retry soon
+        if (!trySpawnNear(players.random())) arm(RETRY_TICKS, ScheduleKind.RETRY)   // e.g. mid-lava-ocean: retry soon
     }
 
     // ---- Display janitor ------------------------------------------------------------------

@@ -398,6 +398,9 @@ private fun buildConfigSubtree(): com.mojang.brigadier.builder.LiteralArgumentBu
 
     for (entry in Config.entries) {
         fun feedback(ctx: com.mojang.brigadier.context.CommandContext<CommandSourceStack>): Int {
+            // Spawn-timing keys re-arm the LIVE countdown (crediting time served) so the change
+            // applies now — without this, an armed timer kept its old roll until the next relog.
+            SpiderSpawnManager.onConfigSet(entry.path)
             ctx.source.sendSuccess({ Component.literal("Spider config '${entry.path}' set to ${entry.get()} (saved).") }, true)
             return 1
         }
