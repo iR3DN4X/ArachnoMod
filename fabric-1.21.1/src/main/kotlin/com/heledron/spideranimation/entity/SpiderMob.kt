@@ -279,9 +279,14 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // is no longer in water, which would shrink, dunk and regrow it in an endless bob. The
         // squeeze still outranks it: it's the active kill move, and brief.
         val waterScale = if (!squeezing && Config.GROW_IN_WATER.get()) waterGrowthScale(level, body) else null
-        val targetScale =
+        var targetScale =
             if (squeezing) Config.SQUEEZE_SIZE.get()
             else maxOf(distanceToScale(horizontalDistance), waterScale ?: 0.0)
+        // Doorway/crawl-hole fit (chase pathfinding): cap the size so the body slips through
+        // the opening on its path to the player. The squeeze still owns its own smaller size.
+        if (!squeezing) {
+            ecsEntity?.let { SpiderAI.passageFitScale(it) }?.let { targetScale = targetScale.coerceAtMost(it) }
+        }
         currentScale = approachScale(currentScale, targetScale)
         body.setSizeScale(currentScale)
 

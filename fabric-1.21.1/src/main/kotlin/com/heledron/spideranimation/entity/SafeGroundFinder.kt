@@ -141,6 +141,26 @@ object SafeGroundFinder {
         return depth.toDouble()
     }
 
+    /**
+     * Height (2 = doorway, 1 = crawl-hole, 0 = none) of a passable ground-level opening at
+     * (x, z) whose floor sits at feet level [groundY] — used by the chase pathfinding to slip
+     * THROUGH a wall instead of steering around it. The ground scanners can't see these
+     * (they scan top-down and find the wall top first), so blocked path columns get this
+     * explicit check. Dry passables only: a water-filled gap is not a doorway.
+     */
+    fun openingHeight(level: ServerLevel, x: Double, groundY: Double, z: Double): Int {
+        val blockX = floor(x).toInt()
+        val blockZ = floor(z).toInt()
+        val feetY = floor(groundY).toInt()
+        val pos = BlockPos.MutableBlockPos()
+        pos.set(blockX, feetY - 1, blockZ)
+        if (!level.getBlockState(pos).isFaceSturdy(level, pos, Direction.UP)) return 0   // no floor
+        pos.set(blockX, feetY, blockZ)
+        if (!isPassable(level, pos)) return 0
+        pos.set(blockX, feetY + 1, blockZ)
+        return if (isPassable(level, pos)) 2 else 1
+    }
+
     /** Solid enough to stand on and not a liquid: never place a spider on/in water or lava. */
     private fun isSolidDryGround(level: ServerLevel, pos: BlockPos): Boolean {
         if (!level.getFluidState(pos).isEmpty) return false

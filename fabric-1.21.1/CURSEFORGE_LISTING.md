@@ -54,6 +54,7 @@ ArachnoMod runs on **three loaders**:
 *   **Charges faster the farther it is** — up to **8× speed** — so distance is no safety.
 *   **It follows you between dimensions.** 🌀 Portal away and a few seconds later it re-emerges near you — the Nether, the End, **or any modded dimension**: the follow keys on where the players are, not which portal was used. There is still only ever ONE spider.
 *   **No hole is safe.** Dig in and it applies **constant pressure**, re-evaluating every tick — the instant a block breaks or a ramp opens, it pours through. And a 1×1×1 hidey-hole? It **SQUEEZES**: shrinks below its minimum size, slips down the shaft after you, bites, and regrows on the way out (`squeezeSize`).
+*   **It goes around corners — and through doorways.** 🚪 A wall it can't climb no longer stops (or confuses) it: the chase **steers around obstacles**, hugging walls to the corner and turning in after you. And if the wall has an opening on its path — a 1×2 doorway, even a 1×1 crawl-hole — it **shrinks just enough to slip through it** and keeps coming. Your house is not the safe side of the door. (`chasePathfinding`, on by default.)
 *   **No lake is safe.** Deep water used to drown it while you watched from a boat. Now it **grows just tall enough to ride above the surface** — pond, river, or open ocean — and keeps coming. (`growInWater`, on by default; turn it off if you want water to stay a weakness.)
 *   **Lava sorts the variants.** 🔥 The **netherite** spider is fireproof like the gear it's made of — it _wades through lava lakes_ unburnt and unbothered. The **camo and poison** variants burn — visibly, flames licking up their legs.
 *   **Boss-grade fight.** The **netherite variant**: 350 HP wrapped in the **exact stats of a full netherite armor suit** (20 armor, 12 toughness) — it shrugs off most of every blow, and lands a **6-heart bite**. The **camo variant**: 600 HP, no armor, same bite — softer, but you have to find it first. The **poison variant**: 500 HP, and the venom does the talking. Bring friends.
@@ -72,9 +73,11 @@ All under `/spider`:
 | Command                    |What it does                                                                                                  |Who                      |
 | -------------------------- |------------------------------------------------------------------------------------------------------------- |------------------------ |
 | <code>/spider newinstance [size]</code> |Spawns <strong>your personal follower spider</strong> that trails you around at the chosen size (0.3–20). A creative-mode toy. |Creative only            |
-| <code>/spider size</code>  |Live-resizes <strong>your</strong> personal spider (0.3–20).                                                  |Anyone (own spider)      |
+| <code>/spider size &lt;n&gt;</code> |Live-resizes <strong>your</strong> personal spider (0.3–20).                                                  |Anyone (own spider)      |
 | <code>/spider release</code> |Dismisses your personal spider.                                                                               |Anyone                   |
-| <code>/spider chasedistance</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
+| <code>/spider chasedistance &lt;blocks&gt;</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; get</code> |Shows any config value in chat.                                                                               |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 46 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
 
 ***
 
@@ -104,6 +107,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>chaseExitDistanceMultiplier</code> |1.25    |Give-up radius = chaseDistance × this (prevents boundary flicker) |
 | <code>alertReactionTicks</code> |10      |The freeze-and-stare beat before it charges (0 = instant charge)  |
 | <code>hostileOnlyAtNight</code> |false   |Only hunts at night, like a vanilla spider                        |
+| <code>chasePathfinding</code> |true    |Steer around unclimbable walls and shrink through doorways/crawl-holes while chasing (false = old straight-line charge) |
 | <code>chaseSpeedBlocksPerSecond</code> |8.0     |Top chase speed at normal size                                    |
 | <code>speedGrowthFactor</code> |8.0     |Speed multiplier at maximum size                                  |
 | <code>legStepSpeed</code>   |1.1     |How fast the legs swing — the "scurry"                            |
@@ -183,7 +187,11 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.3.2 (latest) — all three loaders
+### v1.3.3 (latest) — all three loaders
+- **Fixed: no more getting stuck in walls and "teleporting" up them.** The chase used to walk the straight line into wall faces, slide inside, and ride up out the top. Now it **plans its route**: walls and cliffs it can't climb are **steered around** — it hugs the wall to the corner and turns in after you, without flip-flopping. New config `chasePathfinding` (default **true**; set false for the old straight-line charge).
+- **NEW: it fits through doorways.** 🚪 If the wall on its path has a ground-level opening — a **1×2 doorway** or even a **1×1 crawl-hole** — it doesn't go around: it **shrinks just enough to slip through** and regrows on the other side. Closing the door behind you buys exactly as much time as the door is tall.
+
+### v1.3.2 — all three loaders
 - **Spawn-timer changes now apply immediately.** ⏱️ Changing `spawnMinMinutes` / `spawnMaxMinutes` / `respawnAfterKillMinutes` / `peacefulExitSpawnMinutes` with `/spider config` used to leave the already-running countdown on its old value until you relogged — which made custom spawn timers *look* broken (they never were: values set before world load have always worked, verified). Now the live countdown **re-arms instantly from the new values, crediting the time already waited** — raise a half-elapsed cooldown and it extends by the difference; lower it below the time served and the spider comes promptly. 😈
 
 ### v1.3.1 — "The Venom Update" — all three loaders
@@ -249,8 +257,8 @@ _This release bundles v1.1.2–v1.1.4 (listed below) — if you're updating from
 *   **NEW: Wander / Alert / Chase AI.** The spider now patrols calmly when alone, freezes and _stares at you_ for a beat when it first spots you, then charges — and keeps chasing until you genuinely escape (no more flickering at the detection edge). Optional `hostileOnlyAtNight` vanilla-spider mode.
 *   **NEW: The CAMO variant with active camouflage.** A mossy second spider (25% of spawns by default — still only ever ONE spider) whose legs **continuously repaint as the actual blocks it walks on**, leg by leg, and whose footsteps play **the real sound of the block underfoot** exactly like player steps. Spawn eggs roll the variant chance too.
 *   **NEW: Safe spawning.** Spawn positions (and patrol targets) are verified solid, dry, and clear — never in water, lava, the void, or mid-air. Works on SkyBlock/OneBlock-style maps. Prefers the configured distance band, farther over closer.
-*   **NEW: `/spider config <Command> get|set <value>`** — every one of the 35 config values live-editable in-game (OP-only), with typed, range-checked arguments and full tab-completion; sound Commands tab-complete against every sound in the game. Changes apply to the active spider instantly and persist to the config file.
-*   **16 new config Commands** (spawn safety, AI tuning, wander behavior, variant sounds). Existing config files upgrade in place — your tuned values are untouched.
+*   **NEW: `/spider config &lt;key&gt; get|set &lt;value&gt;`** — every one of the 35 config values live-editable in-game (OP-only), with typed, range-checked arguments and full tab-completion; sound keys tab-complete against every sound in the game. Changes apply to the active spider instantly and persist to the config file.
+*   **16 new config keys** (spawn safety, AI tuning, wander behavior, variant sounds). Existing config files upgrade in place — your tuned values are untouched.
 *   **Fixed:** on NeoForge/Forge, command-made config changes (including the old `/spider chasedistance`) were lost on restart; they now save to disk immediately.
 *   Requires: Fabric API + Fabric Language Kotlin (Fabric) / Kotlin for Forge (NeoForge & Forge), as before.
 

@@ -13,6 +13,7 @@ import org.joml.Vector3d
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -28,6 +29,8 @@ class SpiderAIState(var anchor: Vector3d) {
     var mode: SpiderMode = SpiderMode.WANDER
     var modeTimer: Int = 0
     var squeezing: Boolean = false   // pressing over a dug-in player: shrink to fit their hole
+    var steerSign: Int = 1           // which way it last steered around an obstacle (sticky)
+    var passageClearance: Int = 0    // 1/2 = crawl-hole/doorway on the direct path: shrink to fit
 }
 
 /**
@@ -116,12 +119,21 @@ object SpiderAI {
      *  Config.SQUEEZE_SIZE to fit into their hole (SpiderMob drives the actual scale). */
     fun isSqueezing(entity: EcsEntity): Boolean = states[entity]?.squeezing == true
 
+    /** The size cap needed to slip through the opening (doorway/crawl-hole) currently on the
+     *  chase path, or null when nothing constrains it (SpiderMob applies it to the scale). */
+    fun passageFitScale(entity: EcsEntity): Double? = when (states[entity]?.passageClearance) {
+        1 -> PASSAGE_FIT_CRAWL
+        2 -> PASSAGE_FIT_DOORWAY
+        else -> null
+    }
+
     // ---------------------------------------------------------------- mode transitions
 
     private fun enterWander(state: SpiderAIState, body: SpiderBody) {
         state.mode = SpiderMode.WANDER
         state.modeTimer = 0
         state.squeezing = false
+        state.passageClearance = 0
         state.anchor = Vector3d(body.position)
     }
 
@@ -129,6 +141,7 @@ object SpiderAI {
         state.mode = SpiderMode.ALERT
         state.modeTimer = Config.ALERT_REACTION_TICKS.get()
         state.squeezing = false
+        state.passageClearance = 0
     }
 
     private fun enterChase(state: SpiderAIState) {
@@ -217,7 +230,118 @@ object SpiderAI {
             if (state.squeezing && body.sizeScale <= Config.SQUEEZE_SIZE.get() * 1.25) player.y
             else null
 
-        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(Vector3d(player.x, player.y, player.z), arriveDistance))
+        // CORNER PATHFINDING (chasePathfinding, default true). The old chase walked the straight
+        // line into wall faces: the body has no horizontal collision, so it slid INSIDE the wall
+        // and the height correction rode it up and out the top — the reported "gets stuck in the
+        // wall then teleports up it". Now the chase plans its move each tick; pressure mode
+        // (player vertically out of reach) keeps the old direct press — that machinery (v1.2.1's
+        // constant pressure and THE SQUEEZE) already handles verticality.
+        state.passageClearance = 0
+        var targetPos = Vector3d(player.x, player.y, player.z)
+        var arrive = arriveDistance
+        if (!pressureMode && Config.CHASE_PATHFINDING.get()) {
+            val waypoint = planChaseMove(body, state, player)
+            if (waypoint != null) {
+                targetPos = waypoint
+                arrive = 1.0   // waypoints are re-planned every tick; just flow through them
+            }
+        }
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(targetPos, arrive))
+    }
+
+    // ---------------------------------------------------------------- chase pathfinding
+
+    // Steering probe angles away from the direct line (radians: ~35/70/105 degrees), the
+    // direct-line lookahead, the waypoint distance, and the fit sizes for slipping through
+    // ground-level openings (top of the body ~1.35x scale: 1.15 clears a 2-high doorway,
+    // 0.45 a 1-high crawl-hole, with margin).
+    private val STEER_ANGLES = doubleArrayOf(0.611, 1.222, 1.833)
+    private const val CHASE_LOOKAHEAD = 6.0
+    private const val STEER_PROBE_DIST = 4.0
+    internal const val PASSAGE_FIT_DOORWAY = 1.15
+    internal const val PASSAGE_FIT_CRAWL = 0.45
+
+    private class LineProbe(val walkable: Boolean, val opening: Int, val endGroundY: Double)
+
+    /**
+     * Plan this tick's chase move. Returns null to charge STRAIGHT at the player — either the
+     * direct line is walkable, there's an opening in the wall to shrink through (recorded in
+     * [SpiderAIState.passageClearance]), or everything is blocked (old behaviour: press/climb).
+     * Returns a WAYPOINT when a wall blocks the direct line but a steering angle gets around it:
+     * nearest angle to the target wins, same side as last tick preferred so corners don't
+     * flip-flop, and the waypoint flows into the direct line again the moment it clears.
+     */
+    private fun planChaseMove(body: SpiderBody, state: SpiderAIState, player: ServerPlayer): Vector3d? {
+        val level = body.level
+        val bodyHeight = body.walkGait.stationary.bodyHeight
+        val startGround = body.position.y - bodyHeight
+        // Comfortable step-up scales with the spider; anything taller is a WALL to go around.
+        val maxClimb = (bodyHeight * 1.25).coerceIn(2.0, 8.0)
+        val maxDrop = (bodyHeight * 2.0).coerceIn(4.0, 16.0)
+
+        val dx = player.x - body.position.x
+        val dz = player.z - body.position.z
+        val horizontal = sqrt(dx * dx + dz * dz)
+        if (horizontal < 1.5) return null   // effectively on top of them already
+
+        val dirX = dx / horizontal
+        val dirZ = dz / horizontal
+
+        val direct = probeLine(level, body.position.x, body.position.z, startGround,
+            dirX, dirZ, min(horizontal, CHASE_LOOKAHEAD), maxClimb, maxDrop)
+        if (direct.walkable) return null
+        if (direct.opening > 0) {
+            // A doorway/crawl-hole where the wall blocks the line: shrink to fit and go THROUGH.
+            state.passageClearance = direct.opening
+            return null
+        }
+
+        for (angle in STEER_ANGLES) {
+            for (sign in intArrayOf(state.steerSign, -state.steerSign)) {
+                val a = angle * sign
+                val cosA = cos(a)
+                val sinA = sin(a)
+                val sx = dirX * cosA - dirZ * sinA
+                val sz = dirX * sinA + dirZ * cosA
+                val probe = probeLine(level, body.position.x, body.position.z, startGround,
+                    sx, sz, STEER_PROBE_DIST, maxClimb, maxDrop)
+                if (probe.walkable) {
+                    state.steerSign = sign
+                    return Vector3d(
+                        body.position.x + sx * STEER_PROBE_DIST,
+                        probe.endGroundY,
+                        body.position.z + sz * STEER_PROBE_DIST,
+                    )
+                }
+            }
+        }
+        return null   // boxed in on every side: fall back to the old direct press
+    }
+
+    /**
+     * March a horizontal line in 1-block steps, requiring walkable ground (within step-up/drop
+     * limits) at every column — the same dimension-aware scan the wander pre-scan uses. On the
+     * first blocked column, also report whether it carries a ground-level OPENING (doorway or
+     * crawl-hole) the spider could shrink through; the top-down ground scans can't see those.
+     */
+    private fun probeLine(
+        level: ServerLevel, x0: Double, z0: Double, ground0: Double,
+        dirX: Double, dirZ: Double, length: Double, maxClimb: Double, maxDrop: Double,
+    ): LineProbe {
+        var ground = ground0
+        var x = x0
+        var z = z0
+        val steps = ceil(length).toInt().coerceAtLeast(1)
+        repeat(steps) {
+            x += dirX
+            z += dirZ
+            val groundY = SafeGroundFinder.groundYAt(level, x, z, refY = ground)
+            if (groundY == null || groundY - ground > maxClimb || ground - groundY > maxDrop) {
+                return LineProbe(false, SafeGroundFinder.openingHeight(level, x, ground, z), ground)
+            }
+            ground = groundY
+        }
+        return LineProbe(true, 0, ground)
     }
 
     // ---------------------------------------------------------------- helpers

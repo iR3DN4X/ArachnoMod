@@ -199,6 +199,11 @@ object Config {
     val HOSTILE_ONLY_AT_NIGHT = BooleanValue("hostileOnlyAtNight", false,
         comment("If true, the spider only hunts (and bites) players at night, like a vanilla spider.",
                 "During the day it just wanders."))
+    val CHASE_PATHFINDING = BooleanValue("chasePathfinding", true,
+        comment("If true, a chasing spider STEERS around walls and cliffs it cannot climb instead of",
+                "walking into them (the old 'stuck in the wall, rides up it' behaviour), and SHRINKS",
+                "to slip through doorways (1x2) and crawl-holes (1x1) that lie on its path to you.",
+                "Set false for the old straight-line charge."))
     val CHASE_SPEED = DoubleValue("chaseSpeedBlocksPerSecond", 8.0, 0.5, 40.0,
         comment("Top chase speed in blocks/second at NORMAL size (cruising speed is a bit lower).",
                 "The spider moves faster than this as it grows - see speedGrowthFactor."))
