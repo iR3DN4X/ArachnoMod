@@ -63,6 +63,7 @@ ArachnoMod runs on **three loaders**:
 *   **Boss-grade fight.** The **netherite variant**: 350 HP wrapped in the **exact stats of a full netherite armor suit** (20 armor, 12 toughness) — it shrugs off most of every blow, and lands a **6-heart bite**. The **camo variant**: 600 HP, no armor, same bite — softer, but you have to find it first. The **poison variant**: 500 HP, and the venom does the talking. Bring friends.
 *   **Netherite trophy drop.** A 50% chance to drop a netherite ingot on death (it _is_ made of the stuff) — the ingot lands **on the ground directly beneath the spider**, at any height or depth, so your prize is always where you'd look.
 *   **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
+*   **ENRAGE it — if you dare.** ⚡ Right-click the netherite spider with a **netherite ingot** — feed it the very metal it's made of — and it becomes the **Enraged Netherite Spider**: a true boss with a **red boss bar**, more health (700), 1.5× speed, a **10-heart bite**, and a crackling aura of red rage-dust and blue lightning sparks. Kill it and it **always drops a FULL netherite block** — nine ingots back for the one you fed it. Risk it for the biscuit.
 *   **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
 *   **Fully configurable & hot-reloading.** Every gameplay number lives in a commented config file you can edit live (see Configuration).
 *   **Spawn egg included** — spawn your own Netherite Octoarachnopod from the creative menu.
@@ -80,7 +81,7 @@ All under `/spider`:
 | <code>/spider release</code> |Dismisses your personal spider.                                                                               |Anyone                   |
 | <code>/spider chasedistance &lt;blocks&gt;</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
 | <code>/spider config &lt;key&gt; get</code> |Shows any config value in chat.                                                                               |Ops (permission level 2) |
-| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 50 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 53 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
 
 ***
 
@@ -158,6 +159,9 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>poisonEffectSeconds</code> |30.0    |How long the Poison II from the poison variant's bite lasts |
 | <code>attackCooldownTicks</code> |20      |Ticks between melee hits (20 = 1/sec)     |
 | <code>netheriteDropChance</code> |0.5     |Chance to drop a netherite ingot on death |
+| <code>enragedMaxHealth</code> |700.0   |Max health of an ENRAGED netherite spider (right-click it with a netherite ingot; it keeps its armor suit) |
+| <code>enragedSpeedMultiplier</code> |1.5     |Chase-speed multiplier while enraged |
+| <code>enragedAttackDamageHearts</code> |10.0    |The enraged boss's bite damage in hearts (it always drops a FULL netherite block) |
 
 **Variant sounds** _(the netherite spider always keeps its iconic clank; camo plays the real sound of the block underfoot)_
 
@@ -199,7 +203,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.4.0 (latest) — "The Stalker Update" — all three loaders
+### v1.5.0 (latest) — "The Enrage Update" — all three loaders
+- **NEW: feed it a netherite ingot. See what happens.** ⚡ Right-click the **netherite** spider with a **netherite ingot** and it consumes it — a thunderclap, a burst of red dust and blue sparks — and becomes the **ENRAGED NETHERITE SPIDER**: a named boss with a **red boss bar**, **700 HP** behind its full armor suit (`enragedMaxHealth`), **1.5× chase speed** (`enragedSpeedMultiplier`), and a **10-heart bite** (`enragedAttackDamageHearts`), wreathed in a permanent aura of red rage-dust laced with blue lightning sparks and soul flame. Slay it and it **always drops a FULL netherite block** — nine ingots back for the one you fed it. Netherite variant only; the others just stare at you. Risk it for the biscuit. 🕷️
+
+### v1.4.0 — "The Stalker Update" — all three loaders
 - **NEW: the HUNTER variant.** 🖤 A fourth spider — **pitch black**, **fixed at player size** (never grows, never shrinks — `hunterSize`), and **completely silent**: no footsteps, no landing thuds, nothing. It doesn't charge; it **stalks**. It closes in at **1.6× chase speed** (`hunterSpeedMultiplier`) — but **only while nobody is looking at it**. The moment your view swings toward it, it **freezes dead-still, mid-stride**. Every glance away brings it closer. Inside a few blocks, your eyes stop helping. Hide in a hole and it doesn't press or squeeze like the others — it **camps outside, motionless, and waits**. 400 HP (`hunterMaxHealth`), no armor, 15% of spawns (`hunterVariantChance`). It walks through your doorway at its own size. Check behind you. Then check again.
 
 ### v1.3.3 — all three loaders

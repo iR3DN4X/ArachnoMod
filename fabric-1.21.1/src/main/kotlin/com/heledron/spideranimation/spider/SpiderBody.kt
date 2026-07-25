@@ -70,6 +70,10 @@ class SpiderBody(
     // variant sounds (see the LegStepEvent handler in AppState).
     var variantKey = "netherite"
 
+    // Boss mode (netherite fed a netherite ingot): SpiderMob sets this so SpiderAI can apply
+    // the enraged chase-speed multiplier. Everything else about the rage lives on the mob.
+    var enraged = false
+
     // THE SQUEEZE descent: while pressing over a dug-in player at squeeze size, SpiderAI sets
     // this to the player's Y every tick (null otherwise). calcPreferredY then aims the body at
     // the floor of their hole instead of the leg-average height — the legs stand AROUND a 1x1

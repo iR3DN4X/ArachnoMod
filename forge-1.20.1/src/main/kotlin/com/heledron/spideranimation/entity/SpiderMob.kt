@@ -13,9 +13,14 @@ import com.heledron.spideranimation.spider.camoSpider
 import com.heledron.spideranimation.spider.defaultSpider
 import com.heledron.spideranimation.spider.hunterSpider
 import com.heledron.spideranimation.spider.poisonSpider
+import net.minecraft.core.particles.DustParticleOptions
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.network.chat.Component
+import net.minecraft.server.level.ServerBossEvent
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.BossEvent
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.DifficultyInstance
 import net.minecraft.world.InteractionHand
@@ -76,6 +81,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     var tamed = false
         private set
 
+    // ENRAGED boss mode (netherite only): fed a netherite ingot, it gains health/speed/damage,
+    // a red boss bar, a name, a particle aura — and always drops a FULL netherite block.
+    private var enraged = false
+    private val bossEvent = ServerBossEvent(
+        Component.literal("Enraged Netherite Spider"),
+        BossEvent.BossBarColor.RED,
+        BossEvent.BossBarOverlay.PROGRESS,
+    ).apply { isVisible = false }
+
     init {
         noPhysics = true       // position is driven by the simulation, not vanilla physics
         isNoGravity = true
@@ -129,6 +143,18 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     // Movement is handled by the ECS simulation, not vanilla goals.
     override fun registerGoals() {}
 
+    // The boss bar follows whoever can see the spider — the same tracker hooks the Wither uses.
+    // The bar itself stays invisible until the spider is actually enraged.
+    override fun startSeenByPlayer(player: ServerPlayer) {
+        super.startSeenByPlayer(player)
+        bossEvent.addPlayer(player)
+    }
+
+    override fun stopSeenByPlayer(player: ServerPlayer) {
+        super.stopSeenByPlayer(player)
+        bossEvent.removePlayer(player)
+    }
+
     // Spawn eggs roll the camo chance too (natural spawns roll it in SpiderSpawnManager, which
     // sets `variant` directly). This makes `/spider config camoVariantChance set 1.0` + one egg
     // click a guaranteed camo — no waiting on the natural respawn timer to see the variant.
@@ -152,10 +178,20 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     // per scale unit). 1.20.1 API: getPassengersRidingOffset (renamed getPassengerAttachmentPoint in 1.21).
     override fun getPassengersRidingOffset(): Double = 0.25 * currentScale + 0.2
 
-    /** Spider Tamer item -> tame (docile). Tamed + empty hand -> ride. */
+    /** Spider Tamer item -> tame (docile). Tamed + empty hand -> ride.
+     *  Netherite ingot on the (untamed) NETHERITE variant -> ENRAGE: feed it the metal it is
+     *  made of and it becomes a boss. Risk it for the full-block payout. */
     public override fun mobInteract(player: Player, hand: InteractionHand): InteractionResult {
         val stack = player.getItemInHand(hand)
         val level = level()
+
+        if (stack.item === Items.NETHERITE_INGOT && variant == SpiderVariant.NETHERITE && !tamed) {
+            if (level is ServerLevel && !enraged) {
+                enrage(level)
+                if (!player.abilities.instabuild) stack.shrink(1)
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide)
+        }
 
         if (stack.item === SpiderAnimationMod.SPIDER_TAMER.get()) {
             if (level is ServerLevel && !tamed) {
@@ -174,6 +210,31 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         return super.mobInteract(player, hand)
     }
 
+    /** Flip into boss mode: name + red bar, health topped up by the enraged bonus (damage
+     *  already taken is NOT forgiven), and an ignition worth the price of the ingot. */
+    private fun enrage(level: ServerLevel) {
+        enraged = true
+        body?.enraged = true
+        customName = Component.literal("Enraged Netherite Spider")
+        isCustomNameVisible = true
+        val attr = getAttribute(Attributes.MAX_HEALTH)
+        val oldMax = attr?.baseValue ?: maxHealth.toDouble()
+        val newMax = Config.ENRAGED_MAX_HEALTH.get().coerceAtLeast(oldMax)
+        attr?.baseValue = newMax
+        health = (health + (newMax - oldMax).toFloat()).coerceAtMost(maxHealth)
+        bossEvent.isVisible = true
+
+        val p = body?.position
+        val px = p?.x ?: x
+        val py = p?.y ?: y
+        val pz = p?.z ?: z
+        level.playSoundAt(Vector3d(px, py, pz), SoundEvents.LIGHTNING_BOLT_THUNDER, 1.0f, 1.4f)
+        level.sendParticles(DustParticleOptions.REDSTONE, px, py, pz, 60,
+            1.2 * currentScale, 0.8 * currentScale, 1.2 * currentScale, 0.1)
+        level.sendParticles(ParticleTypes.ELECTRIC_SPARK, px, py, pz, 40,
+            1.2 * currentScale, 0.8 * currentScale, 1.2 * currentScale, 0.3)
+    }
+
     private fun ensureBody(level: ServerLevel): SpiderBody {
         body?.let { return it }
 
@@ -189,6 +250,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
 
         val (entity, newBody) = AppState.spawnBody(level, spawn, yaw, options)
         newBody.variantKey = variant.key   // routes step/land sounds (netherite = classic clank)
+        newBody.enraged = enraged          // survives body rebuilds (SpiderAI reads it for speed)
         ecsEntity = entity
         body = newBody
         SpiderSpawnManager.notifyAlive(this)   // register as THE spider (enforces only-one)
@@ -240,6 +302,26 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             return
         }
         body.manualControl = false
+
+        // ENRAGED boss dressing: keep the bar honest, and wear the storm — red rage-dust laced
+        // with blue-white sparks and soul flame (our BlockDisplay body can't wear the charged-
+        // creeper shader, so it wears the weather instead). body.position per the effects rule.
+        if (enraged) {
+            bossEvent.progress = health / maxHealth
+            if (tickCount % 2 == 0) {
+                val p = body.position
+                level.sendParticles(DustParticleOptions.REDSTONE, p.x, p.y, p.z, 3,
+                    0.6 * currentScale, 0.4 * currentScale, 0.6 * currentScale, 0.02)
+                if (tickCount % 6 == 0) {
+                    level.sendParticles(ParticleTypes.ELECTRIC_SPARK, p.x, p.y, p.z, 2,
+                        0.7 * currentScale, 0.5 * currentScale, 0.7 * currentScale, 0.15)
+                    val leg = body.legs.randomOrNull()
+                    if (leg != null) level.sendParticles(ParticleTypes.SOUL_FIRE_FLAME,
+                        leg.endEffector.x, leg.endEffector.y + 0.1, leg.endEffector.z,
+                        1, 0.05, 0.05, 0.05, 0.01)
+                }
+            }
+        }
 
         // Non-NETHERITE variants burn VISIBLY: the mob itself is an invisible hitbox and
         // BlockDisplays can't catch fire, so vanilla burning alone would be a silent, invisible
@@ -330,7 +412,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
                     body.endLunge()   // bite landed — end the strike, so one lunge = one bite
                 }
             } else if (attackCooldown == 0 && distSqr <= reach * reach) {
-                nearest.hurt(damageSources().mobAttack(this), (Config.ATTACK_DAMAGE_HEARTS.get() * 2.0).toFloat())
+                val hearts = if (enraged) Config.ENRAGED_ATTACK_DAMAGE_HEARTS.get()
+                    else Config.ATTACK_DAMAGE_HEARTS.get()
+                nearest.hurt(damageSources().mobAttack(this), (hearts * 2.0).toFloat())
                 attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()
             }
         }
@@ -434,7 +518,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private fun rollTrophy(level: ServerLevel) {
         if (trophyRolled) return
         trophyRolled = true
-        if (random.nextFloat() >= Config.NETHERITE_DROP_CHANCE.get()) return
+        // The ENRAGED boss always pays out: a FULL netherite block where one ingot went in.
+        val trophyItem = if (enraged) Items.NETHERITE_BLOCK else Items.NETHERITE_INGOT
+        if (!enraged && random.nextFloat() >= Config.NETHERITE_DROP_CHANCE.get()) return
         // Drop at the SIMULATION body position, not the invisible hitbox position. The hitbox is
         // synced to the body only during entity-ticking, one ECS update BEHIND body.position — for
         // a fast or giant spider (several blocks/tick) that lag dropped the trophy several blocks
@@ -444,7 +530,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         val dropY = b?.position?.y ?: y
         val dropZ = b?.position?.z ?: z
         val floorY = SafeGroundFinder.findFloorBelow(level, dropX, dropY, dropZ) ?: dropY
-        val trophy = ItemEntity(level, dropX, floorY + 0.25, dropZ, ItemStack(Items.NETHERITE_INGOT))
+        val trophy = ItemEntity(level, dropX, floorY + 0.25, dropZ, ItemStack(trophyItem))
         trophy.setDefaultPickUpDelay()
         level.addFreshEntity(trophy)
     }
@@ -459,6 +545,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // (health > 0), so they never drop — exactly as intended.
         val level = level()
         if (level is ServerLevel && (reason == Entity.RemovalReason.KILLED || health <= 0.0f)) rollTrophy(level)
+        bossEvent.removeAllPlayers()
         cleanup()
         super.remove(reason)
     }

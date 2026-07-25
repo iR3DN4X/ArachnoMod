@@ -289,6 +289,13 @@ object Config {
         comment("Ticks between melee hits (20 = one hit per second)."))
     val NETHERITE_DROP_CHANCE = DoubleValue("netheriteDropChance", 0.5, 0.0, 1.0,
         comment("Chance (0.0-1.0) to drop a single netherite ingot on death. 0.5 = half the time."))
+    val ENRAGED_MAX_HEALTH = DoubleValue("enragedMaxHealth", 700.0, 1.0, 1000000.0,
+        comment("Max health of an ENRAGED netherite spider (right-click the netherite variant with a",
+                "netherite ingot to enrage it into a boss; it keeps its full armor suit)."))
+    val ENRAGED_SPEED_MULTIPLIER = DoubleValue("enragedSpeedMultiplier", 1.5, 1.0, 8.0,
+        comment("Chase-speed multiplier while enraged."))
+    val ENRAGED_ATTACK_DAMAGE_HEARTS = DoubleValue("enragedAttackDamageHearts", 10.0, 0.0, 100.0,
+        comment("The enraged boss's bite damage in HEARTS. It always drops a FULL netherite block."))
 
     // ---- Variant sounds --------------------------------------------------------------------
     // The default (netherite) spider ALWAYS uses its iconic netherite step/fall sounds. The CAMO

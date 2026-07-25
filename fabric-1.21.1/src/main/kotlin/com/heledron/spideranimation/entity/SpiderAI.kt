@@ -197,7 +197,8 @@ object SpiderAI {
             tickStalk(entity, body, state, player)
             return
         }
-        body.setSpeedScale(chaseSpeedFactor(body))
+        val rageBoost = if (body.enraged) Config.ENRAGED_SPEED_MULTIPLIER.get() else 1.0
+        body.setSpeedScale(chaseSpeedFactor(body) * rageBoost)
         // Stop distance must be CLAMPED: bodyHeight scales with size, and a size-15 spider's
         // bodyHeight*2 is ~33 blocks - it would consider itself "arrived" while still far away.
         //
