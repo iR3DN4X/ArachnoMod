@@ -312,9 +312,11 @@ object SpiderSpawnManager {
 
     private fun spawnAt(level: ServerLevel, x: Double, y: Double, z: Double): Boolean {
         val spider = SpiderAnimationMod.SPIDER_ENTITY.create(level) ?: return false
-        // Roll the variant: venomous POISON, mossy CAMO, or the classic armored netherite
-        // (still only ONE spider in the world, whichever face it wears).
-        if (Random.nextDouble() < Config.POISON_VARIANT_CHANCE.get()) {
+        // Roll the variant: pitch-black HUNTER, venomous POISON, mossy CAMO, or the classic
+        // armored netherite (still only ONE spider in the world, whichever face it wears).
+        if (Random.nextDouble() < Config.HUNTER_VARIANT_CHANCE.get()) {
+            spider.variant = SpiderVariant.HUNTER
+        } else if (Random.nextDouble() < Config.POISON_VARIANT_CHANCE.get()) {
             spider.variant = SpiderVariant.POISON
         } else if (Random.nextDouble() < Config.CAMO_VARIANT_CHANCE.get()) {
             spider.variant = SpiderVariant.CAMO

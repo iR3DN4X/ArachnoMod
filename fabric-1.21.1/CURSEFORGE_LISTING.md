@@ -4,7 +4,7 @@
 
 ***
 
-A boss-grade fight whichever face it wears: the **netherite hunter** packs 350 HP inside the stats of a full netherite armor suit; the mossy **camo stalker** runs 600 unarmored HP and hopes you never spot it; the warped **poison striker** carries 500 unarmored HP, and a venomous tarantula lunge. Kill it and it _might_ just drop the netherite it's made of.
+A boss-grade fight whichever face it wears: the **netherite juggernaut** packs 350 HP inside the stats of a full netherite armor suit; the mossy **camo stalker** runs 600 unarmored HP and hopes you never spot it; the warped **poison striker** carries 500 unarmored HP, and a venomous tarantula lunge; and the pitch-black **HUNTER** (400 HP, player-sized, dead silent) only moves when you're not looking. Kill it and it _might_ just drop the netherite it's made of.
 
 ***
 
@@ -14,7 +14,9 @@ A boss-grade fight whichever face it wears: the **netherite hunter** packs 350 H
 
 *   **hunts you** — it spots you from far away, stares you down, and charges;
 *   is **enormous** — up to ~16 blocks tall, towering over the trees as it closes in;
-*   can be **camouflaged** (v1.1.1) — the CAMO variant blends into the terrain and sounds like ordinary footsteps, so it can get _very_ close before you notice it.
+*   can be **camouflaged** (v1.1.1) — the CAMO variant blends into the terrain and sounds like ordinary footsteps, so it can get _very_ close before you notice it;
+*   can **pounce** — the POISON variant rears up with its front legs raised and _lunges_ at you, exactly like a real tarantula strike;
+*   can **stalk** — the pitch-black HUNTER variant follows you in total silence and only moves when you're not looking at it.
 
 There is no "cute mode." If realistic spider movement is a problem for you or the people on your server, this may genuinely be an uncomfortable experience… consider `hostileOnlyAtNight = true`, lowering `maxSize`, or sitting this one out. You have been warned. 🕸️
 
@@ -48,6 +50,7 @@ ArachnoMod runs on **three loaders**:
 *   **Idle life.** Disable wandering and the spider becomes a living statue instead of a frozen one: it **breathes** — a slow body-bob that scales with its size — and occasionally **grooms**, lifting its front legs to its mouth and cleaning them with a smooth sweeping rub while leaning down. Yes, the murder kaiju is, briefly, adorable.
 *   **The CAMO variant.** A second spider that can naturally spawn (25% by default, still only ONE spider ever) with **ACTIVE CAMOUFLAGE**: every leg continuously repaints itself as **the actual block it's standing on** — grass legs in the meadow, sand legs on the beach, stone legs in the mountains, changing leg-by-leg as it walks. Its footsteps play **the real step sound of the block underfoot**, exactly like player footsteps — it crunches on gravel, thuds on dirt, and goes whisper-quiet on wool. You won't see it coming. You might not hear it either.
 *   **The POISON variant.** ☠️ A third spider (20% of spawns by default) sheathed in the eerie blue-teal of **warped wart**, its footsteps squishing like the Nether fungus it's made of. It fights like a **real tarantula**: in striking range it **rears up, front legs raised** — that's your only warning — then **LUNGES**, hurling its whole body at you. The bite is gentler than its cousins' (3 hearts) but injects **Poison II for 30 seconds**. 500 HP and no armor… but with the venom ticking, the clock is yours to worry about.
+*   **The HUNTER variant.** 🖤 A fourth spider (15% of spawns by default), **pitch black**, **player-sized and always exactly that size**, and **completely silent** — no footsteps, ever. It doesn't charge. It **stalks**: it closes in FAST (1.6× chase speed), but **only while nobody is looking at it** — the moment your view swings toward it, it **freezes dead-still**, mid-stride, legs in the air. Every glance away brings it closer. Within a few blocks it stops caring about your eyes. Hide in a hole and it doesn't dig or squeeze — it **camps outside, motionless, waiting**. 400 HP. Walks through doorways at its size. Check behind you.
 *   **Safe spawning.** Spawns (and patrol routes) are validated for solid, dry ground — no more spiders in the void, over oceans, or inside SkyBlock gaps. Keeps the configured spawn distance whenever possible, preferring farther over closer; never pops up in your face.
 *   **Procedural 8-leg animation.** No canned animations — every step is solved live with FABRIK IK and rendered through vanilla BlockDisplays. Buttery-smooth motion.
 *   **Grows with distance.** Far away it's a **towering giant** (up to ~16 blocks tall); as it closes in it **shrinks down** to bite you. The feet stay planted at every size.
@@ -77,7 +80,7 @@ All under `/spider`:
 | <code>/spider release</code> |Dismisses your personal spider.                                                                               |Anyone                   |
 | <code>/spider chasedistance &lt;blocks&gt;</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
 | <code>/spider config &lt;key&gt; get</code> |Shows any config value in chat.                                                                               |Ops (permission level 2) |
-| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 46 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 50 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
 
 ***
 
@@ -98,6 +101,8 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>spawnAngleAttempts</code> |24      |Directions tested per candidate distance when hunting safe spawn ground     |
 | <code>spawnMaxVerticalSearch</code> |48      |How deep below the heightmap to look for solid ground (SkyBlock-friendly)   |
 | <code>camoVariantChance</code> |0.25    |Chance a spawned spider is the CAMO variant (natural spawns AND spawn eggs) |
+| <code>poisonVariantChance</code> |0.2     |Chance a spawned spider is the POISON variant (rolled before the camo chance) |
+| <code>hunterVariantChance</code> |0.15    |Chance a spawned spider is the pitch-black HUNTER variant (rolled first)    |
 
 **Chase & speed**
 
@@ -109,6 +114,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>hostileOnlyAtNight</code> |false   |Only hunts at night, like a vanilla spider                        |
 | <code>chasePathfinding</code> |true    |Steer around unclimbable walls and shrink through doorways/crawl-holes while chasing (false = old straight-line charge) |
 | <code>chaseSpeedBlocksPerSecond</code> |8.0     |Top chase speed at normal size                                    |
+| <code>hunterSpeedMultiplier</code> |1.6     |The HUNTER's speed (× base chase speed) while it moves — it only moves when unwatched |
 | <code>speedGrowthFactor</code> |8.0     |Speed multiplier at maximum size                                  |
 | <code>legStepSpeed</code>   |1.1     |How fast the legs swing — the "scurry"                            |
 
@@ -136,14 +142,20 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>growPercentPerTick</code> |12.0    |Fastest it can grow (%/tick)                                                                                            |
 | <code>shrinkPercentPerTick</code> |25.0    |Fastest it can shrink (%/tick)                                                                                          |
 | <code>riddenSize</code> |2.0     |Stable size while a player is riding it                                                                                 |
+| <code>hunterSize</code> |1.1     |The HUNTER's FIXED size — it never grows or shrinks (1.1 = a head taller than a player; fits doorways as-is)            |
 | <code>growInWater</code> |true    |In water, grow just big enough to ride above the surface instead of drowning (false = deep water stays a drowning trap) |
 
 **Combat & drops**
 
 | Key                 |Default |Meaning                                   |
 | ------------------- |------- |----------------------------------------- |
-| <code>maxHealth</code> |1000.0  |The spider's max health                   |
+| <code>netheriteMaxHealth</code> |350.0   |Max health of the netherite variant (it also wears full netherite-suit armor stats) |
+| <code>camoMaxHealth</code> |600.0   |Max health of the camo variant (no armor) |
+| <code>poisonMaxHealth</code> |500.0   |Max health of the poison variant (no armor — its danger is the bite) |
+| <code>hunterMaxHealth</code> |400.0   |Max health of the hunter variant (no armor — it was never supposed to be seen) |
 | <code>attackDamageHearts</code> |6.0     |Melee damage in hearts per hit            |
+| <code>poisonAttackDamageHearts</code> |3.0     |The poison variant's bite damage in hearts (every bite also injects Poison II) |
+| <code>poisonEffectSeconds</code> |30.0    |How long the Poison II from the poison variant's bite lasts |
 | <code>attackCooldownTicks</code> |20      |Ticks between melee hits (20 = 1/sec)     |
 | <code>netheriteDropChance</code> |0.5     |Chance to drop a netherite ingot on death |
 
@@ -187,7 +199,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.3.3 (latest) — all three loaders
+### v1.4.0 (latest) — "The Stalker Update" — all three loaders
+- **NEW: the HUNTER variant.** 🖤 A fourth spider — **pitch black**, **fixed at player size** (never grows, never shrinks — `hunterSize`), and **completely silent**: no footsteps, no landing thuds, nothing. It doesn't charge; it **stalks**. It closes in at **1.6× chase speed** (`hunterSpeedMultiplier`) — but **only while nobody is looking at it**. The moment your view swings toward it, it **freezes dead-still, mid-stride**. Every glance away brings it closer. Inside a few blocks, your eyes stop helping. Hide in a hole and it doesn't press or squeeze like the others — it **camps outside, motionless, and waits**. 400 HP (`hunterMaxHealth`), no armor, 15% of spawns (`hunterVariantChance`). It walks through your doorway at its own size. Check behind you. Then check again.
+
+### v1.3.3 — all three loaders
 - **Fixed: no more getting stuck in walls and "teleporting" up them.** The chase used to walk the straight line into wall faces, slide inside, and ride up out the top. Now it **plans its route**: walls and cliffs it can't climb are **steered around** — it hugs the wall to the corner and turns in after you, without flip-flopping. New config `chasePathfinding` (default **true**; set false for the old straight-line charge).
 - **NEW: it fits through doorways.** 🚪 If the wall on its path has a ground-level opening — a **1×2 doorway** or even a **1×1 crawl-hole** — it doesn't go around: it **shrinks just enough to slip through** and regrows on the other side. Closing the door behind you buys exactly as much time as the door is tall.
 

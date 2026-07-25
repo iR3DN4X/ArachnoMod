@@ -180,10 +180,12 @@ object AppState {
         //    pitch — exactly like player footsteps — falling back to the configured variant sound
         //    when the foot is over air. variantStepVolume/variantLandVolume still scale loudness.
         //  - POISON: locked to the warped wart squish (it IS eerie Nether fungus).
+        //  - HUNTER: dead silent. You will not hear it coming — that is its job.
         //  - any other/future variant: the configured variant sounds.
         ecs.onEvent<LegStepEvent> { e ->
             when (e.spider.variantKey) {
                 "netherite" -> e.spider.level.playSoundAt(e.leg.endEffector, SoundEvents.NETHERITE_BLOCK_STEP, 0.3f, 1.0f)
+                "hunter" -> {}   // silent steps
                 "poison" -> e.spider.level.playSoundAt(e.leg.endEffector, SoundEvents.WART_BLOCK_STEP,
                     Config.VARIANT_STEP_VOLUME.get().toFloat(), 0.9f)
                 "camo" -> {
@@ -206,6 +208,7 @@ object AppState {
         ecs.onEvent<SpiderBodyHitGroundEvent> { e ->
             when (e.spider.variantKey) {
                 "netherite" -> e.spider.level.playSoundAt(e.spider.position, SoundEvents.NETHERITE_BLOCK_FALL, 1.0f, 0.8f)
+                "hunter" -> {}   // silent landings too
                 "poison" -> e.spider.level.playSoundAt(e.spider.position, SoundEvents.WART_BLOCK_FALL,
                     Config.VARIANT_LAND_VOLUME.get().toFloat(), 0.8f)
                 "camo" -> {

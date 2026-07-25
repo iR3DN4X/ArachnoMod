@@ -11,6 +11,7 @@ import com.heledron.spideranimation.spider.SpiderBody
 import com.heledron.spideranimation.spider.StayStillBehaviour
 import com.heledron.spideranimation.spider.camoSpider
 import com.heledron.spideranimation.spider.defaultSpider
+import com.heledron.spideranimation.spider.hunterSpider
 import com.heledron.spideranimation.spider.poisonSpider
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.nbt.CompoundTag
@@ -56,8 +57,11 @@ import kotlin.math.sqrt
  * steers by looking + pressing forward (W), and the size pins to a mount-friendly scale.
  */
 /** Variants of the spider. NETHERITE is the armored classic; CAMO is the mossy chameleon;
- *  POISON is the warped-teal tarantula that lunges and injects Poison II. */
-enum class SpiderVariant(val key: String) { NETHERITE("netherite"), CAMO("camo"), POISON("poison") }
+ *  POISON is the warped-teal tarantula that lunges and injects Poison II; HUNTER is the
+ *  pitch-black, player-sized, silent stalker that only moves while unwatched. */
+enum class SpiderVariant(val key: String) {
+    NETHERITE("netherite"), CAMO("camo"), POISON("poison"), HUNTER("hunter")
+}
 
 class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, level) {
     private var body: SpiderBody? = null
@@ -137,7 +141,8 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         spawnTag: CompoundTag?,
     ): SpawnGroupData? {
         if (spawnType == MobSpawnType.SPAWN_EGG) {
-            if (random.nextDouble() < Config.POISON_VARIANT_CHANCE.get()) variant = SpiderVariant.POISON
+            if (random.nextDouble() < Config.HUNTER_VARIANT_CHANCE.get()) variant = SpiderVariant.HUNTER
+            else if (random.nextDouble() < Config.POISON_VARIANT_CHANCE.get()) variant = SpiderVariant.POISON
             else if (random.nextDouble() < Config.CAMO_VARIANT_CHANCE.get()) variant = SpiderVariant.CAMO
         }
         return super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData, spawnTag)
@@ -175,6 +180,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         val options = when (variant) {
             SpiderVariant.CAMO -> camoSpider()
             SpiderVariant.POISON -> poisonSpider()
+            SpiderVariant.HUNTER -> hunterSpider()
             else -> defaultSpider()
         }
         val bodyHeight = options.walkGait.stationary.bodyHeight
@@ -194,6 +200,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             SpiderVariant.NETHERITE -> Config.NETHERITE_MAX_HEALTH.get()
             SpiderVariant.CAMO -> Config.CAMO_MAX_HEALTH.get()
             SpiderVariant.POISON -> Config.POISON_MAX_HEALTH.get()
+            SpiderVariant.HUNTER -> Config.HUNTER_MAX_HEALTH.get()
         }
         health = maxHealth
 
@@ -279,13 +286,21 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // column over its floor), not on "is the mob in water" — a grown body above the surface
         // is no longer in water, which would shrink, dunk and regrow it in an endless bob. The
         // squeeze still outranks it: it's the active kill move, and brief.
-        val waterScale = if (!squeezing && Config.GROW_IN_WATER.get()) waterGrowthScale(level, body) else null
-        var targetScale =
-            if (squeezing) Config.SQUEEZE_SIZE.get()
-            else maxOf(distanceToScale(horizontalDistance), waterScale ?: 0.0)
+        val waterScale =
+            if (!squeezing && variant != SpiderVariant.HUNTER && Config.GROW_IN_WATER.get())
+                waterGrowthScale(level, body)
+            else null
+        var targetScale = when {
+            // THE HUNTER never changes size: fixed at hunterSize whatever the distance, water
+            // depth, or opening ahead (it fits doorways at that size; holes are walls to it —
+            // deep water is its one weakness, since it will not grow above the surface).
+            variant == SpiderVariant.HUNTER -> Config.HUNTER_SIZE.get()
+            squeezing -> Config.SQUEEZE_SIZE.get()
+            else -> maxOf(distanceToScale(horizontalDistance), waterScale ?: 0.0)
+        }
         // Doorway/crawl-hole fit (chase pathfinding): cap the size so the body slips through
         // the opening on its path to the player. The squeeze still owns its own smaller size.
-        if (!squeezing) {
+        if (!squeezing && variant != SpiderVariant.HUNTER) {
             ecsEntity?.let { SpiderAI.passageFitScale(it) }?.let { targetScale = targetScale.coerceAtMost(it) }
         }
         currentScale = approachScale(currentScale, targetScale)

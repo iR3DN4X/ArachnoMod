@@ -18,6 +18,7 @@ import org.joml.Vector3d
 private val NETHERITE: BlockState get() = Blocks.NETHERITE_BLOCK.defaultBlockState()
 private val MOSS: BlockState get() = Blocks.MOSS_BLOCK.defaultBlockState()
 private val WARPED_WART: BlockState get() = Blocks.WARPED_WART_BLOCK.defaultBlockState()
+private val BLACK: BlockState get() = Blocks.BLACK_CONCRETE.defaultBlockState()
 
 private fun equalLength(segmentCount: Int, length: Double): List<SegmentPlan> =
     List(segmentCount) { SegmentPlan(length, FORWARD_VECTOR) }
@@ -159,6 +160,18 @@ fun camoSpider(): SpiderOptions {
 fun poisonSpider(): SpiderOptions {
     val o = defaultSpider()
     applyLineLegModel(o.bodyPlan, WARPED_WART)
+    return o
+}
+
+/**
+ * THE HUNTER: identical geometry/gait to [defaultSpider], skinned in black concrete — the
+ * flattest, purest black in the game; at night it's a silhouette-shaped absence of stars.
+ * Its stalking behaviour (only moves while unwatched, camps outside hideouts) lives in
+ * SpiderAI.tickStalk; its fixed size and speed live in SpiderMob/config.
+ */
+fun hunterSpider(): SpiderOptions {
+    val o = defaultSpider()
+    applyLineLegModel(o.bodyPlan, BLACK)
     return o
 }
 

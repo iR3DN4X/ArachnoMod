@@ -183,6 +183,9 @@ object Config {
     val POISON_VARIANT_CHANCE = DoubleValue("poisonVariantChance", 0.2, 0.0, 1.0,
         comment("Chance (0.0-1.0) that a spawned spider is the venomous POISON variant (rolled BEFORE",
                 "the camo chance; applies to natural spawns and spawn eggs alike)."))
+    val HUNTER_VARIANT_CHANCE = DoubleValue("hunterVariantChance", 0.15, 0.0, 1.0,
+        comment("Chance (0.0-1.0) that a spawned spider is the pitch-black HUNTER variant (rolled",
+                "FIRST, before poison and camo; natural spawns and spawn eggs alike)."))
 
     // ---- Chase & speed ---------------------------------------------------------------------
     val CHASE_DISTANCE = DoubleValue("chaseDistance", 64.0, 8.0, 256.0,
@@ -266,6 +269,15 @@ object Config {
                 "can find it."))
     val POISON_MAX_HEALTH = DoubleValue("poisonMaxHealth", 500.0, 1.0, 1000000.0,
         comment("Max health of the POISON variant (default 500). No armor - its danger is the bite."))
+    val HUNTER_MAX_HEALTH = DoubleValue("hunterMaxHealth", 400.0, 1.0, 1000000.0,
+        comment("Max health of the HUNTER variant (default 400). No armor - it was never supposed to",
+                "be seen at all."))
+    val HUNTER_SIZE = DoubleValue("hunterSize", 1.1, 0.3, 5.0,
+        comment("The HUNTER's FIXED size - it never grows or shrinks (default 1.1: a head taller than",
+                "a player, and it slips through 1x2 doorways at that size without shrinking)."))
+    val HUNTER_SPEED_MULTIPLIER = DoubleValue("hunterSpeedMultiplier", 1.6, 1.0, 8.0,
+        comment("The HUNTER's speed (x base chase speed) while it moves - faster up close than any",
+                "other variant. It only moves while nobody is looking at it."))
     val ATTACK_DAMAGE_HEARTS = DoubleValue("attackDamageHearts", 6.0, 0.0, 100.0,
         comment("Melee damage in HEARTS per hit."))
     val POISON_ATTACK_DAMAGE_HEARTS = DoubleValue("poisonAttackDamageHearts", 3.0, 0.0, 100.0,

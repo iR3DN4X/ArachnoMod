@@ -192,6 +192,11 @@ object SpiderAI {
     }
 
     private fun tickChase(entity: EcsEntity, body: SpiderBody, state: SpiderAIState, player: ServerPlayer) {
+        // THE HUNTER doesn't charge — it stalks. Entirely different close-in rules: see tickStalk.
+        if (body.variantKey == "hunter") {
+            tickStalk(entity, body, state, player)
+            return
+        }
         body.setSpeedScale(chaseSpeedFactor(body))
         // Stop distance must be CLAMPED: bodyHeight scales with size, and a size-15 spider's
         // bodyHeight*2 is ~33 blocks - it would consider itself "arrived" while still far away.
@@ -249,6 +254,69 @@ object SpiderAI {
         entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(targetPos, arrive))
     }
 
+    // ---------------------------------------------------------------- the hunter's stalk
+
+    // How the HUNTER hunts ("a hiding mechanic where it just stalks you or camps"): it closes in
+    // ONLY while nobody is looking at it, and freezes dead-still — mid-stride — the moment a
+    // view swings toward it. Every glance away brings it closer, in silence. Inside commit range
+    // your eyes stop helping: it takes you anyway. And if you're vertically out of its reach (a
+    // hole, a pillar), it doesn't press or squeeze like the others — it CAMPS, motionless, just
+    // outside. It can wait longer than you can.
+    private const val HUNTER_COMMIT_RANGE = 6.0    // blocks: watching it no longer helps
+    private const val HUNTER_SEEN_DOT = 0.7        // cos ~45°: "on your screen" counts as watched
+
+    private fun tickStalk(entity: EcsEntity, body: SpiderBody, state: SpiderAIState, player: ServerPlayer) {
+        // The hunter never squeezes and never shrinks: clear anything the shared machinery set.
+        state.squeezing = false
+        state.passageClearance = 0
+        body.squeezeTargetY = null
+
+        val dx = player.x - body.position.x
+        val dz = player.z - body.position.z
+        val horizontal = sqrt(dx * dx + dz * dz)
+        val groundLevelY = body.position.y - body.walkGait.stationary.bodyHeight
+        val verticalGap = abs(groundLevelY - player.y)
+
+        // Player dug in / pillared up nearby: CAMP. Dead still, right outside the hideout.
+        if (verticalGap > 2.0 && horizontal < 8.0) {
+            entity.replaceComponent<SpiderBehaviour>(StayStillBehaviour())
+            return
+        }
+
+        // Watched from outside commit range: freeze. Not a step, not a sway.
+        val anyoneWatching = body.level.players().any { isLookingAt(it, body) }
+        if (anyoneWatching && horizontal > HUNTER_COMMIT_RANGE) {
+            entity.replaceComponent<SpiderBehaviour>(StayStillBehaviour())
+            return
+        }
+
+        // Unseen (or committed): close in, fast and silent, with the same route planning as the
+        // normal chase — but crawl-holes count as walls (it never shrinks; doorways fit as-is).
+        body.setSpeedScale(Config.HUNTER_SPEED_MULTIPLIER.get())
+        var targetPos = Vector3d(player.x, player.y, player.z)
+        var arrive = (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
+        if (Config.CHASE_PATHFINDING.get()) {
+            val waypoint = planChaseMove(body, state, player, minOpening = 2)
+            if (waypoint != null) {
+                targetPos = waypoint
+                arrive = 1.0
+            }
+        }
+        state.passageClearance = 0   // fixed size: openings are walked through, never shrunk for
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(targetPos, arrive))
+    }
+
+    /** Is this player's view direction pointing at the spider's body (within ~45°)? */
+    private fun isLookingAt(player: ServerPlayer, body: SpiderBody): Boolean {
+        val look = player.lookAngle
+        val dx = body.position.x - player.x
+        val dy = body.position.y - (player.y + player.eyeHeight)
+        val dz = body.position.z - player.z
+        val len = sqrt(dx * dx + dy * dy + dz * dz)
+        if (len < 1.0e-6) return true
+        return (look.x * dx + look.y * dy + look.z * dz) / len > HUNTER_SEEN_DOT
+    }
+
     // ---------------------------------------------------------------- chase pathfinding
 
     // Steering probe angles away from the direct line (radians: ~35/70/105 degrees), the
@@ -271,7 +339,7 @@ object SpiderAI {
      * nearest angle to the target wins, same side as last tick preferred so corners don't
      * flip-flop, and the waypoint flows into the direct line again the moment it clears.
      */
-    private fun planChaseMove(body: SpiderBody, state: SpiderAIState, player: ServerPlayer): Vector3d? {
+    private fun planChaseMove(body: SpiderBody, state: SpiderAIState, player: ServerPlayer, minOpening: Int = 1): Vector3d? {
         val level = body.level
         val bodyHeight = body.walkGait.stationary.bodyHeight
         val startGround = body.position.y - bodyHeight
@@ -290,8 +358,9 @@ object SpiderAI {
         val direct = probeLine(level, body.position.x, body.position.z, startGround,
             dirX, dirZ, min(horizontal, CHASE_LOOKAHEAD), maxClimb, maxDrop)
         if (direct.walkable) return null
-        if (direct.opening > 0) {
-            // A doorway/crawl-hole where the wall blocks the line: shrink to fit and go THROUGH.
+        if (direct.opening >= minOpening) {
+            // A doorway/crawl-hole where the wall blocks the line: fit through it and go
+            // STRAIGHT (minOpening lets the fixed-size hunter treat crawl-holes as walls).
             state.passageClearance = direct.opening
             return null
         }
