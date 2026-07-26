@@ -89,6 +89,14 @@ class SpiderBody(
     // acts when the preferred height is ABOVE the body).
     var passageFloorY: Double? = null
 
+    // ...and the centre line of that passage: the body's OFF-AXIS coordinate is held here while
+    // it threads through (only one of the two is ever set). A corridor is one block wide, so a
+    // few centimetres of drift puts the body centre inside a wall — and a body inside a block
+    // gets shoved a whole block upward by collision resolution, every tick, until it pops out
+    // on the roof. Steering alone can't hold a line that tight; this does.
+    var passageLaneX: Double? = null
+    var passageLaneZ: Double? = null
+
     // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
     private var stationaryTimer = 0
     private var groomingTimer = 0
@@ -321,18 +329,39 @@ class SpiderBody(
         // apply velocity
         position.add(velocity)
 
-        // resolve collision
-        val collision = level.resolveCollision(position, Vector3d(0.0, min(-1.0, -abs(velocity.y)), 0.0))
-        if (collision != null) {
-            onGround = true
-            val didHit = collision.offset.length() > (gait.gravityAcceleration * 2) * (1 - gait.airDragCoefficient)
-            if (didHit) ecs.emit(SpiderBodyHitGroundEvent(spider = this))
+        // Hold the centre line of a passage being threaded, and kill the lateral velocity that
+        // is trying to push off it, so the body stays inside the tube for its whole length.
+        passageLaneX?.let { lane -> position.x += (lane - position.x) * 0.6; velocity.x *= 0.2 }
+        passageLaneZ?.let { lane -> position.z += (lane - position.z) * 0.6; velocity.z *= 0.2 }
 
-            position.y = collision.position.y
-            if (velocity.y < 0) velocity.y *= -gait.bounceFactor
-            if (velocity.y < gait.gravityAcceleration) velocity.y = .0
+        // resolve collision
+        val heightPin = passageFloorY ?: squeezeTargetY
+        if (heightPin != null) {
+            // Threading a doorway, corridor or squeeze-hole: the ceiling is right above the
+            // body, and the collision resolve below casts from a block ABOVE it — a point
+            // that is *inside* that ceiling in any tight space, so it "hits" instantly and
+            // teleports the body a block upward every tick (the reported climb up the wall).
+            // The height pin already owns the body height in here; all that's left is to keep
+            // it off the floor.
+            val minY = heightPin + 0.05
+            if (position.y < minY) {
+                position.y = minY
+                if (velocity.y < 0) velocity.y = .0
+            }
+            onGround = true
         } else {
-            onGround = level.isOnGround(position, DOWN_VECTOR.rotate(orientation))
+            val collision = level.resolveCollision(position, Vector3d(0.0, min(-1.0, -abs(velocity.y)), 0.0))
+            if (collision != null) {
+                onGround = true
+                val didHit = collision.offset.length() > (gait.gravityAcceleration * 2) * (1 - gait.airDragCoefficient)
+                if (didHit) ecs.emit(SpiderBodyHitGroundEvent(spider = this))
+
+                position.y = collision.position.y
+                if (velocity.y < 0) velocity.y *= -gait.bounceFactor
+                if (velocity.y < gait.gravityAcceleration) velocity.y = .0
+            } else {
+                onGround = level.isOnGround(position, DOWN_VECTOR.rotate(orientation))
+            }
         }
 
         val updateOrder = gait.type.getLegsInUpdateOrder(this)

@@ -39,6 +39,8 @@ class SpiderAIState(var anchor: Vector3d) {
     var openingZ = 0.0
     var openingHeight = 0            // 0 = nothing committed
     var openingAlongX = false        // the axis it is threaded on (walls stand on the other one)
+    var openingLo = 0.0              // the passage's two mouths along that axis (equal for a
+    var openingHi = 0.0              //   one-block-thick doorway; metres apart for a tunnel)
     var openingTimer = 0             // ticks left on the commitment, or on the rescan cooldown
     var waypointArrive = 1.0         // how close the current waypoint wants to be reached
 }
@@ -81,6 +83,8 @@ object SpiderAI {
         // or finished threading a door) can never leave a stale height order on the body.
         body.squeezeTargetY = null
         body.passageFloorY = null
+        body.passageLaneX = null
+        body.passageLaneZ = null
 
         var nearestPlayer = level.players().minByOrNull {
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
@@ -450,28 +454,44 @@ object SpiderAI {
      * opening's floor (no climbing) and shrunk to fit (no 3-block leg-skirt in a 1-block door).
      */
     private fun threadOpening(body: SpiderBody, state: SpiderAIState, opening: SafeGroundFinder.Opening): Vector3d {
-        val ax = if (opening.alongX) 1.0 else 0.0
-        val az = if (opening.alongX) 0.0 else 1.0
-        val dx = body.position.x - opening.x
-        val dz = body.position.z - opening.z
-        val side = if (ax * dx + az * dz >= 0.0) 1.0 else -1.0   // which side of the wall it's on
-        val dist = sqrt(dx * dx + dz * dz)
+        val alongX = opening.alongX
+        // Split the world into "along the passage" and "across it": everything below is 1-D.
+        val bodyAlong = if (alongX) body.position.x else body.position.z
+        val bodyLane = if (alongX) body.position.z else body.position.x
+        val lane = if (alongX) opening.z else opening.x
+        fun point(along: Double, across: Double) =
+            if (alongX) Vector3d(along, opening.y, across) else Vector3d(across, opening.y, along)
 
-        if (dist < OPENING_SHRINK_RANGE) state.passageClearance = opening.height
-        if (dist < OPENING_PIN_RANGE) body.passageFloorY = opening.y
+        // Enter by the near mouth, leave by the far one — a doorway's two mouths are the same
+        // block, a tunnel's are its two ends.
+        val lo = state.openingLo
+        val hi = state.openingHi
+        val enterAtLo = bodyAlong <= (lo + hi) * 0.5
+        val entry = if (enterAtLo) lo else hi
+        val exit = if (enterAtLo) hi else lo
+        val dir = if (enterAtLo) 1.0 else -1.0
+
+        val laneOff = abs(bodyLane - lane)
+        val distToEntry = abs(bodyAlong - entry) + laneOff
+        if (distToEntry < OPENING_SHRINK_RANGE) state.passageClearance = opening.height
+
+        // Inside the tube (or in its mouth): hold the floor AND the centre line for the whole
+        // length. This is what makes a long corridor survivable — steering alone drifts.
+        val insideSpan = bodyAlong > lo - 1.5 && bodyAlong < hi + 1.5
+        if (insideSpan && laneOff < 1.5) {
+            body.passageFloorY = opening.y
+            if (alongX) body.passageLaneZ = lane else body.passageLaneX = lane
+        } else if (distToEntry < OPENING_PIN_RANGE) {
+            body.passageFloorY = opening.y   // stops the wall-climb while it walks up to the mouth
+        }
 
         state.waypointArrive = 0.4   // commit to these waypoints; don't stop short of the frame
 
-        val stageX = opening.x + ax * OPENING_STAGE_DIST * side
-        val stageZ = opening.z + az * OPENING_STAGE_DIST * side
-        val sdx = stageX - body.position.x
-        val sdz = stageZ - body.position.z
-        // Not lined up yet -> go stand square in front of it. Lined up -> straight on through.
-        return if (sdx * sdx + sdz * sdz > 1.44)
-            Vector3d(stageX, opening.y, stageZ)
-        else
-            Vector3d(opening.x - ax * OPENING_STAGE_DIST * side, opening.y,
-                     opening.z - az * OPENING_STAGE_DIST * side)
+        // Line up square on the centre line first; once lined up (or already inside), drive
+        // straight down the axis and out the far end.
+        val lined = laneOff < 0.75
+        return if (!lined && !insideSpan) point(entry - dir * OPENING_STAGE_DIST, lane)
+        else point(exit + dir * OPENING_STAGE_DIST, lane)
     }
 
     /**
@@ -511,6 +531,9 @@ object SpiderAI {
         state.openingZ = found.z
         state.openingHeight = found.height
         state.openingAlongX = found.alongX
+        val extent = SafeGroundFinder.passageExtent(body.level, found, minOpening)
+        state.openingLo = extent.first
+        state.openingHi = extent.second
         state.openingTimer = OPENING_COMMIT_TICKS
         return found
     }

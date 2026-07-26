@@ -216,6 +216,32 @@ object SafeGroundFinder {
     }
 
     /**
+     * How far the passage at this opening runs along its axis: the block-centre coordinates of
+     * its first and last column. A doorway in a one-block wall gives the same value twice; the
+     * tunnel bored through a hillside gives its two mouths. The chase needs this because a
+     * corridor is not "one step through" — the body has to be steered and held on the centre
+     * line for the WHOLE length, or it clips a wall and gets shoved up through the roof.
+     */
+    fun passageExtent(level: ServerLevel, opening: Opening, minHeight: Int, maxLength: Int = 32): Pair<Double, Double> {
+        val alongX = opening.alongX
+        val wantAxis = if (alongX) 2 else 1
+        var lo = if (alongX) opening.x else opening.z
+        var hi = lo
+
+        for (dir in intArrayOf(-1, 1)) {
+            for (step in 1..maxLength) {
+                val cx = if (alongX) opening.x + dir * step else opening.x
+                val cz = if (alongX) opening.z else opening.z + dir * step
+                if (openingHeight(level, cx, opening.y, cz) < minHeight) break
+                if (pinchAxis(level, floor(cx).toInt(), floor(opening.y).toInt(), floor(cz).toInt()) != wantAxis) break
+                val along = if (alongX) cx else cz
+                if (dir < 0) lo = along else hi = along
+            }
+        }
+        return lo to hi
+    }
+
+    /**
      * Is (x, feetY, z) a gap THROUGH something rather than just open floor? Returns 0 for no,
      * 1 when walls stand east+west (so you pass along Z), 2 when they stand north+south (pass
      * along X). Walls on both sides of one axis is the signature of a doorway, gate or

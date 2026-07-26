@@ -203,7 +203,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.5.2 (latest) — all three loaders
+### v1.5.3 (latest) — all three loaders
+- **Tunnels work now, not just doorways.** 🕳️ A one-block-thick doorway is one step through; a **corridor** means holding a one-block-wide line for its whole length, and the spider couldn't — it drifted a few centimetres into a wall and got launched up through the roof. Now it **measures the passage end to end**, walks in on the centre line, and is **held on that line until it comes out the far side** — through a 6-block tunnel, a mineshaft, a hallway, whatever you dug. The upward "teleport" is gone at the source: while inside anything tight, the collision step that was shoving it up a block per tick is disabled outright (that also quietly fixes the same lurch in 1×1 squeeze-holes). Long crawl tunnels work too — though the fixed-size hunter still won't fit a 1-high one, and has to find another way in. 🕷️
+
+### v1.5.2 — all three loaders
 - **Fixed for real this time: it comes through the door instead of climbing over your house.** v1.5.1 got the spider to *find* your door; it then rode up the wall anyway. Three causes, all fixed: its legs were grabbing the wall top and hauling the body up after them (the body is now **pinned to the doorway's own floor** while it goes through), it approached the gap at an angle so the body clipped the frame and got shoved a block upward every tick (it now **lines up square in front of the opening and walks straight through**), and the "fit" size was far too big — the leg spread was three blocks wide against a one-block door (**doorway fit 1.15 → 0.6, crawl-hole 0.45 → 0.3**). It now threads the gap with its legs splayed around the frame, exactly as it should. 🚪🕷️
 
 ### v1.5.1 — all three loaders
