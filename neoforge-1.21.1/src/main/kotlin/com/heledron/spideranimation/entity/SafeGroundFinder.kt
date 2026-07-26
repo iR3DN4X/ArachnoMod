@@ -162,8 +162,10 @@ object SafeGroundFinder {
         return if (isDoorway(level, pos)) 2 else 1
     }
 
-    /** A ground-level gap the spider can fit through: a doorway (2 high) or a crawl-hole (1). */
-    class Opening(val x: Double, val y: Double, val z: Double, val height: Int)
+    /** A ground-level gap the spider can fit through: a doorway (2 high) or a crawl-hole (1).
+     *  [alongX] is the axis you travel THROUGH it on (walls stand on the other axis), which is
+     *  what lets the chase line itself up square with the gap instead of clipping the frame. */
+    class Opening(val x: Double, val y: Double, val z: Double, val height: Int, val alongX: Boolean)
 
     /**
      * HUNT FOR THE DOOR. A doorway is one block wide, so the straight line from the spider to
@@ -202,9 +204,10 @@ object SafeGroundFinder {
                     val y = groundY + dy
                     val height = openingHeight(level, x, y, z)
                     if (height < minHeight) continue
-                    if (!isPinchedBetweenWalls(level, bx, floor(y).toInt(), bz)) continue
+                    val pinch = pinchAxis(level, bx, floor(y).toInt(), bz)
+                    if (pinch == 0) continue
                     found.add(((targetX - x) * (targetX - x) + (targetZ - z) * (targetZ - z))
-                        to Opening(x, y, z, height))
+                        to Opening(x, y, z, height, alongX = pinch == 2))
                     break
                 }
             }
@@ -212,15 +215,21 @@ object SafeGroundFinder {
         return found.sortedBy { it.first }.take(limit).map { it.second }
     }
 
-    /** True when (x, feetY, z) has solid blocks on both sides of one horizontal axis — the
-     *  signature of a gap THROUGH something (doorway, gate, mouse-hole) rather than open floor. */
-    private fun isPinchedBetweenWalls(level: ServerLevel, x: Int, feetY: Int, z: Int): Boolean {
+    /**
+     * Is (x, feetY, z) a gap THROUGH something rather than just open floor? Returns 0 for no,
+     * 1 when walls stand east+west (so you pass along Z), 2 when they stand north+south (pass
+     * along X). Walls on both sides of one axis is the signature of a doorway, gate or
+     * mouse-hole; it rejects room interiors, corners and open ground.
+     */
+    private fun pinchAxis(level: ServerLevel, x: Int, feetY: Int, z: Int): Int {
         val pos = BlockPos.MutableBlockPos()
         fun blocked(ox: Int, oz: Int): Boolean {
             pos.set(x + ox, feetY, z + oz)
             return !isPassable(level, pos)
         }
-        return (blocked(1, 0) && blocked(-1, 0)) || (blocked(0, 1) && blocked(0, -1))
+        if (blocked(1, 0) && blocked(-1, 0)) return 1    // walls on X -> travel along Z
+        if (blocked(0, 1) && blocked(0, -1)) return 2    // walls on Z -> travel along X
+        return 0
     }
 
     /** Solid enough to stand on and not a liquid: never place a spider on/in water or lava. */

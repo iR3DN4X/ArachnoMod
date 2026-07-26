@@ -38,7 +38,9 @@ class SpiderAIState(var anchor: Vector3d) {
     var openingY = 0.0
     var openingZ = 0.0
     var openingHeight = 0            // 0 = nothing committed
+    var openingAlongX = false        // the axis it is threaded on (walls stand on the other one)
     var openingTimer = 0             // ticks left on the commitment, or on the rescan cooldown
+    var waypointArrive = 1.0         // how close the current waypoint wants to be reached
 }
 
 /**
@@ -74,10 +76,11 @@ object SpiderAI {
         val level = body.level
         val state = states.getOrPut(entity) { SpiderAIState(Vector3d(body.position)) }
 
-        // Squeeze descent target is re-asserted by tickChase every tick it applies; clearing it
-        // up front means wander/alert (and a chase that stopped squeezing) can never leave a
-        // stale "sink into the ground" order on the body.
+        // Squeeze descent and doorway-floor pins are re-asserted by tickChase every tick they
+        // apply; clearing them up front means wander/alert (and a chase that stopped squeezing
+        // or finished threading a door) can never leave a stale height order on the body.
         body.squeezeTargetY = null
+        body.passageFloorY = null
 
         var nearestPlayer = level.players().minByOrNull {
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
@@ -261,10 +264,11 @@ object SpiderAI {
         var targetPos = Vector3d(player.x, player.y, player.z)
         var arrive = arriveDistance
         if (!pressureMode && Config.CHASE_PATHFINDING.get()) {
+            state.waypointArrive = 1.0   // waypoints are re-planned every tick; flow through them
             val waypoint = planChaseMove(body, state, player)
             if (waypoint != null) {
                 targetPos = waypoint
-                arrive = 1.0   // waypoints are re-planned every tick; just flow through them
+                arrive = state.waypointArrive
             }
         }
         entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(targetPos, arrive))
@@ -312,10 +316,11 @@ object SpiderAI {
         var targetPos = Vector3d(player.x, player.y, player.z)
         var arrive = (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
         if (Config.CHASE_PATHFINDING.get()) {
+            state.waypointArrive = 1.0
             val waypoint = planChaseMove(body, state, player, minOpening = 2)
             if (waypoint != null) {
                 targetPos = waypoint
-                arrive = 1.0
+                arrive = state.waypointArrive
             }
         }
         state.passageClearance = 0   // fixed size: openings are walked through, never shrunk for
@@ -342,8 +347,12 @@ object SpiderAI {
     private val STEER_ANGLES = doubleArrayOf(0.611, 1.222, 1.833)
     private const val CHASE_LOOKAHEAD = 6.0
     private const val STEER_PROBE_DIST = 4.0
-    internal const val PASSAGE_FIT_DOORWAY = 1.15
-    internal const val PASSAGE_FIT_CRAWL = 0.45
+    // Fit sizes for slipping through a gap. These are small on purpose: the leg spread is
+    // roughly 2.6x the scale, so anything near 1.0 wears a 3-block-wide skirt of legs against a
+    // 1-block doorway — it looked (and physically behaved) like it did not fit, because it
+    // didn't. At 0.6 the body threads a doorway with its legs splayed around the frame.
+    internal const val PASSAGE_FIT_DOORWAY = 0.6
+    internal const val PASSAGE_FIT_CRAWL = 0.3
 
     // Door-seeking: how far around the blocked spot to hunt for a way in, how long to commit to
     // one once found (so it doesn't dither between two doors), how long to wait before searching
@@ -352,6 +361,8 @@ object SpiderAI {
     private const val OPENING_COMMIT_TICKS = 80
     private const val OPENING_RESCAN_TICKS = 20
     private const val OPENING_SHRINK_RANGE = 7.0
+    private const val OPENING_STAGE_DIST = 1.6    // where it lines up, square in front of the gap
+    private const val OPENING_PIN_RANGE = 4.5     // within this, the body is pinned to the floor
 
     private class LineProbe(
         val walkable: Boolean,
@@ -406,16 +417,7 @@ object SpiderAI {
         // instead of dithering. It shrinks to fit only once it's close, so the approach still
         // looks like a full-size spider bearing down on the house.
         val opening = commitOpening(body, state, player, direct, minOpening, startGround, maxClimb, maxDrop)
-        if (opening != null) {
-            val odx = opening.x - body.position.x
-            val odz = opening.z - body.position.z
-            if (sqrt(odx * odx + odz * odz) < OPENING_SHRINK_RANGE) state.passageClearance = opening.height
-            // Aim a step PAST the frame so it walks through, rather than stopping inside it.
-            val tx = player.x - opening.x
-            val tz = player.z - opening.z
-            val tLen = sqrt(tx * tx + tz * tz).coerceAtLeast(1.0e-6)
-            return Vector3d(opening.x + tx / tLen, opening.y, opening.z + tz / tLen)
-        }
+        if (opening != null) return threadOpening(body, state, opening)
 
         for (angle in STEER_ANGLES) {
             for (sign in intArrayOf(state.steerSign, -state.steerSign)) {
@@ -440,6 +442,39 @@ object SpiderAI {
     }
 
     /**
+     * Walk through the gap, squarely. Aiming straight at a doorway from an angle puts the body
+     * CENTRE into the frame rather than the hole, and a body inside a block gets shoved a block
+     * upward every tick by collision resolution — that is the "teleports up the wall" everyone
+     * sees. So: line up on the passage axis first, one and a half blocks out, then walk straight
+     * through to the same distance on the far side. Meanwhile the body is pinned to the
+     * opening's floor (no climbing) and shrunk to fit (no 3-block leg-skirt in a 1-block door).
+     */
+    private fun threadOpening(body: SpiderBody, state: SpiderAIState, opening: SafeGroundFinder.Opening): Vector3d {
+        val ax = if (opening.alongX) 1.0 else 0.0
+        val az = if (opening.alongX) 0.0 else 1.0
+        val dx = body.position.x - opening.x
+        val dz = body.position.z - opening.z
+        val side = if (ax * dx + az * dz >= 0.0) 1.0 else -1.0   // which side of the wall it's on
+        val dist = sqrt(dx * dx + dz * dz)
+
+        if (dist < OPENING_SHRINK_RANGE) state.passageClearance = opening.height
+        if (dist < OPENING_PIN_RANGE) body.passageFloorY = opening.y
+
+        state.waypointArrive = 0.4   // commit to these waypoints; don't stop short of the frame
+
+        val stageX = opening.x + ax * OPENING_STAGE_DIST * side
+        val stageZ = opening.z + az * OPENING_STAGE_DIST * side
+        val sdx = stageX - body.position.x
+        val sdz = stageZ - body.position.z
+        // Not lined up yet -> go stand square in front of it. Lined up -> straight on through.
+        return if (sdx * sdx + sdz * sdz > 1.44)
+            Vector3d(stageX, opening.y, stageZ)
+        else
+            Vector3d(opening.x - ax * OPENING_STAGE_DIST * side, opening.y,
+                     opening.z - az * OPENING_STAGE_DIST * side)
+    }
+
+    /**
      * The opening the spider is currently heading for: the committed one if it still holds,
      * otherwise a fresh scan (rate-limited — the scan reads a lot of blocks, and re-running it
      * every tick while walled in would be wasteful and jittery).
@@ -452,7 +487,8 @@ object SpiderAI {
         if (state.openingTimer > 0) {
             state.openingTimer--
             return if (state.openingHeight > 0)
-                SafeGroundFinder.Opening(state.openingX, state.openingY, state.openingZ, state.openingHeight)
+                SafeGroundFinder.Opening(state.openingX, state.openingY, state.openingZ,
+                    state.openingHeight, state.openingAlongX)
             else null   // cooling down after a fruitless search
         }
 
@@ -474,6 +510,7 @@ object SpiderAI {
         state.openingY = found.y
         state.openingZ = found.z
         state.openingHeight = found.height
+        state.openingAlongX = found.alongX
         state.openingTimer = OPENING_COMMIT_TICKS
         return found
     }

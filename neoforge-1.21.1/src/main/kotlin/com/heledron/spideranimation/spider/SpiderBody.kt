@@ -81,6 +81,14 @@ class SpiderBody(
     // grounded rim legs, no matter how small it shrinks.
     var squeezeTargetY: Double? = null
 
+    // THREADING A DOORWAY: the floor level of the opening the spider is going through, or null.
+    // Without this the legs plant on top of the wall as it arrives, the leg-average pulls the
+    // preferred height up with them, and the body climbs the building instead of walking
+    // through the door — the "it just teleports upward" report. Pinning the preferred height to
+    // the doorway floor both kills that climb and stops the upward normal force (which only
+    // acts when the preferred height is ABOVE the body).
+    var passageFloorY: Double? = null
+
     // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
     private var stationaryTimer = 0
     private var groomingTimer = 0
@@ -552,6 +560,14 @@ class SpiderBody(
         // squeeze size sets the body — and the bite — right on top of the hidden player. The
         // upward normal force only acts when preferredY is ABOVE the body, so lowering targetY
         // both releases the rim-leg hover and engages the downward height correction.
+        // Doorway threading: stand at the opening's own floor, never at whatever height the
+        // legs have wandered off to (the wall top, usually).
+        val passY = passageFloorY
+        if (passY != null) {
+            val standY = passY + lerpedGait().bodyHeight
+            if (standY < targetY) targetY = standY
+        }
+
         val squeezeY = squeezeTargetY
         if (squeezeY != null) {
             val scanDistance = (position.y - squeezeY).coerceAtLeast(0.0) + 2.0

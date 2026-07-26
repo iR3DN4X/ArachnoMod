@@ -203,7 +203,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.5.1 (latest) — all three loaders
+### v1.5.2 (latest) — all three loaders
+- **Fixed for real this time: it comes through the door instead of climbing over your house.** v1.5.1 got the spider to *find* your door; it then rode up the wall anyway. Three causes, all fixed: its legs were grabbing the wall top and hauling the body up after them (the body is now **pinned to the doorway's own floor** while it goes through), it approached the gap at an angle so the body clipped the frame and got shoved a block upward every tick (it now **lines up square in front of the opening and walks straight through**), and the "fit" size was far too big — the leg spread was three blocks wide against a one-block door (**doorway fit 1.15 → 0.6, crawl-hole 0.45 → 0.3**). It now threads the gap with its legs splayed around the frame, exactly as it should. 🚪🕷️
+
+### v1.5.1 — all three loaders
 - **Fixed: doorways actually work now.** 🚪 v1.3.3's "it fits through doorways" only triggered if a doorway happened to sit exactly on the straight line between the spider and you — which basically never happens, so the spider just circled your house instead. Two fixes: **it now goes looking for the way in** (when a wall blocks it, it scans the building for real openings, picks the nearest one it can actually walk to, and commits to it), and **closed doors and trapdoors count as openings** — a shut door has collision, so the old check read your front door as solid wall. Netherite, camo and poison shrink to fit and let themselves in; the hunter is already door-sized and simply walks through. Alcoves, windows-to-nowhere and the open floor inside the room are all correctly ignored — it's specifically hunting *gaps in barriers*. Lock your door all you like. 🕷️
 
 ### v1.5.0 — "The Enrage Update" — all three loaders
