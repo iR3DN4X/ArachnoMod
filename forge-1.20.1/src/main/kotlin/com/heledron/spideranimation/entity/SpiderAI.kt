@@ -31,6 +31,14 @@ class SpiderAIState(var anchor: Vector3d) {
     var squeezing: Boolean = false   // pressing over a dug-in player: shrink to fit their hole
     var steerSign: Int = 1           // which way it last steered around an obstacle (sticky)
     var passageClearance: Int = 0    // 1/2 = crawl-hole/doorway on the direct path: shrink to fit
+
+    // The doorway it is currently walking to (see SpiderAI.commitOpening): committing for a
+    // while stops it dithering between two doors, and rate-limits the (blocks-heavy) search.
+    var openingX = 0.0
+    var openingY = 0.0
+    var openingZ = 0.0
+    var openingHeight = 0            // 0 = nothing committed
+    var openingTimer = 0             // ticks left on the commitment, or on the rescan cooldown
 }
 
 /**
@@ -134,6 +142,7 @@ object SpiderAI {
         state.modeTimer = 0
         state.squeezing = false
         state.passageClearance = 0
+        clearOpening(state)
         state.anchor = Vector3d(body.position)
     }
 
@@ -142,6 +151,12 @@ object SpiderAI {
         state.modeTimer = Config.ALERT_REACTION_TICKS.get()
         state.squeezing = false
         state.passageClearance = 0
+        clearOpening(state)
+    }
+
+    private fun clearOpening(state: SpiderAIState) {
+        state.openingHeight = 0
+        state.openingTimer = 0
     }
 
     private fun enterChase(state: SpiderAIState) {
@@ -330,7 +345,21 @@ object SpiderAI {
     internal const val PASSAGE_FIT_DOORWAY = 1.15
     internal const val PASSAGE_FIT_CRAWL = 0.45
 
-    private class LineProbe(val walkable: Boolean, val opening: Int, val endGroundY: Double)
+    // Door-seeking: how far around the blocked spot to hunt for a way in, how long to commit to
+    // one once found (so it doesn't dither between two doors), how long to wait before searching
+    // again after finding nothing, and how close it must be before it shrinks down to fit.
+    private const val OPENING_SEARCH_RADIUS = 7
+    private const val OPENING_COMMIT_TICKS = 80
+    private const val OPENING_RESCAN_TICKS = 20
+    private const val OPENING_SHRINK_RANGE = 7.0
+
+    private class LineProbe(
+        val walkable: Boolean,
+        val opening: Int,
+        val endGroundY: Double,
+        val hitX: Double = 0.0,
+        val hitZ: Double = 0.0,
+    )
 
     /**
      * Plan this tick's chase move. Returns null to charge STRAIGHT at the player — either the
@@ -358,12 +387,34 @@ object SpiderAI {
 
         val direct = probeLine(level, body.position.x, body.position.z, startGround,
             dirX, dirZ, min(horizontal, CHASE_LOOKAHEAD), maxClimb, maxDrop)
-        if (direct.walkable) return null
+        if (direct.walkable) {
+            clearOpening(state)   // through it (or never needed one)
+            return null
+        }
         if (direct.opening >= minOpening) {
             // A doorway/crawl-hole where the wall blocks the line: fit through it and go
             // STRAIGHT (minOpening lets the fixed-size hunter treat crawl-holes as walls).
             state.passageClearance = direct.opening
             return null
+        }
+
+        // LET ITSELF IN. A doorway is one block wide and the straight line to you virtually
+        // never crosses it, so a blocked line used to mean "steer around the building" — the
+        // spider would circle your house forever, doorway or not. Now it goes looking for the
+        // way in: the best opening in the obstacle (closest to you, and one that leads
+        // somewhere), committed to for a while so it walks a straight line to your door
+        // instead of dithering. It shrinks to fit only once it's close, so the approach still
+        // looks like a full-size spider bearing down on the house.
+        val opening = commitOpening(body, state, player, direct, minOpening, startGround, maxClimb, maxDrop)
+        if (opening != null) {
+            val odx = opening.x - body.position.x
+            val odz = opening.z - body.position.z
+            if (sqrt(odx * odx + odz * odz) < OPENING_SHRINK_RANGE) state.passageClearance = opening.height
+            // Aim a step PAST the frame so it walks through, rather than stopping inside it.
+            val tx = player.x - opening.x
+            val tz = player.z - opening.z
+            val tLen = sqrt(tx * tx + tz * tz).coerceAtLeast(1.0e-6)
+            return Vector3d(opening.x + tx / tLen, opening.y, opening.z + tz / tLen)
         }
 
         for (angle in STEER_ANGLES) {
@@ -389,6 +440,63 @@ object SpiderAI {
     }
 
     /**
+     * The opening the spider is currently heading for: the committed one if it still holds,
+     * otherwise a fresh scan (rate-limited — the scan reads a lot of blocks, and re-running it
+     * every tick while walled in would be wasteful and jittery).
+     */
+    private fun commitOpening(
+        body: SpiderBody, state: SpiderAIState, player: ServerPlayer,
+        direct: LineProbe, minOpening: Int,
+        startGround: Double, maxClimb: Double, maxDrop: Double,
+    ): SafeGroundFinder.Opening? {
+        if (state.openingTimer > 0) {
+            state.openingTimer--
+            return if (state.openingHeight > 0)
+                SafeGroundFinder.Opening(state.openingX, state.openingY, state.openingZ, state.openingHeight)
+            else null   // cooling down after a fruitless search
+        }
+
+        // Candidates come back nearest-to-the-player first; take the first one the spider can
+        // actually WALK to from where it stands. That reachability test is what keeps it from
+        // fixating on the far side of the building (or on a gap it would have to pass through
+        // the wall to use) — it always picks the way in that its own side of the wall offers.
+        val candidates = SafeGroundFinder.collectOpenings(
+            body.level, direct.hitX, direct.hitZ, direct.endGroundY,
+            player.x, player.z, OPENING_SEARCH_RADIUS, minOpening,
+        )
+        val found = candidates.firstOrNull { canReach(body, startGround, it, maxClimb, maxDrop, minOpening) }
+        if (found == null) {
+            state.openingHeight = 0
+            state.openingTimer = OPENING_RESCAN_TICKS
+            return null
+        }
+        state.openingX = found.x
+        state.openingY = found.y
+        state.openingZ = found.z
+        state.openingHeight = found.height
+        state.openingTimer = OPENING_COMMIT_TICKS
+        return found
+    }
+
+    /** Can the spider walk from where it stands to this opening? The line may end blocked AT
+     *  the opening itself — that gap IS the way through — but not before it. */
+    private fun canReach(
+        body: SpiderBody, startGround: Double, opening: SafeGroundFinder.Opening,
+        maxClimb: Double, maxDrop: Double, minOpening: Int,
+    ): Boolean {
+        val dx = opening.x - body.position.x
+        val dz = opening.z - body.position.z
+        val len = sqrt(dx * dx + dz * dz)
+        if (len < 1.0e-6) return true
+        val probe = probeLine(body.level, body.position.x, body.position.z, startGround,
+            dx / len, dz / len, len, maxClimb, maxDrop)
+        if (probe.walkable) return true
+        val hx = probe.hitX - opening.x
+        val hz = probe.hitZ - opening.z
+        return hx * hx + hz * hz <= 2.25 && probe.opening >= minOpening
+    }
+
+    /**
      * March a horizontal line in 1-block steps, requiring walkable ground (within step-up/drop
      * limits) at every column — the same dimension-aware scan the wander pre-scan uses. On the
      * first blocked column, also report whether it carries a ground-level OPENING (doorway or
@@ -407,7 +515,7 @@ object SpiderAI {
             z += dirZ
             val groundY = SafeGroundFinder.groundYAt(level, x, z, refY = ground)
             if (groundY == null || groundY - ground > maxClimb || ground - groundY > maxDrop) {
-                return LineProbe(false, SafeGroundFinder.openingHeight(level, x, ground, z), ground)
+                return LineProbe(false, SafeGroundFinder.openingHeight(level, x, ground, z), ground, x, z)
             }
             ground = groundY
         }

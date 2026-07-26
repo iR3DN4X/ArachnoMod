@@ -4,6 +4,7 @@ import com.heledron.spideranimation.Config
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
 import net.minecraft.server.level.ServerLevel
+import net.minecraft.tags.BlockTags
 import net.minecraft.tags.FluidTags
 import net.minecraft.world.level.levelgen.Heightmap
 import kotlin.math.floor
@@ -156,9 +157,70 @@ object SafeGroundFinder {
         pos.set(blockX, feetY - 1, blockZ)
         if (!level.getBlockState(pos).isFaceSturdy(level, pos, Direction.UP)) return 0   // no floor
         pos.set(blockX, feetY, blockZ)
-        if (!isPassable(level, pos)) return 0
+        if (!isDoorway(level, pos)) return 0
         pos.set(blockX, feetY + 1, blockZ)
-        return if (isPassable(level, pos)) 2 else 1
+        return if (isDoorway(level, pos)) 2 else 1
+    }
+
+    /** A ground-level gap the spider can fit through: a doorway (2 high) or a crawl-hole (1). */
+    class Opening(val x: Double, val y: Double, val z: Double, val height: Int)
+
+    /**
+     * HUNT FOR THE DOOR. A doorway is one block wide, so the straight line from the spider to
+     * the player almost never passes through it — checking only the column where the line hits
+     * the wall (which is what the chase used to do) finds a doorway just about never, and the
+     * spider circles the building instead. This scans the obstacle around the hit point and
+     * returns every way IN, ordered by how close each one gets to the player, for the caller to
+     * pick the nearest one it can actually reach.
+     *
+     * A candidate must be a genuine GAP IN A BARRIER, not just open floor: it needs solid
+     * blocks on BOTH sides of one axis (north+south, or east+west) at feet level. That is what
+     * a doorway, a gate or a mouse-hole looks like, and it rejects the open floor inside the
+     * room (which is otherwise "floor with air above" and would otherwise win for being nearest
+     * the player), room corners, and the ground out in the open.
+     */
+    fun collectOpenings(
+        level: ServerLevel,
+        hitX: Double, hitZ: Double, groundY: Double,
+        targetX: Double, targetZ: Double,
+        radius: Int, minHeight: Int,
+        limit: Int = 12,
+    ): List<Opening> {
+        val baseX = floor(hitX).toInt()
+        val baseZ = floor(hitZ).toInt()
+        val found = ArrayList<Pair<Double, Opening>>()
+
+        for (dx in -radius..radius) {
+            for (dz in -radius..radius) {
+                val bx = baseX + dx
+                val bz = baseZ + dz
+                if (!level.hasChunk(bx shr 4, bz shr 4)) continue
+                val x = bx + 0.5
+                val z = bz + 0.5
+
+                for (dy in -1..1) {
+                    val y = groundY + dy
+                    val height = openingHeight(level, x, y, z)
+                    if (height < minHeight) continue
+                    if (!isPinchedBetweenWalls(level, bx, floor(y).toInt(), bz)) continue
+                    found.add(((targetX - x) * (targetX - x) + (targetZ - z) * (targetZ - z))
+                        to Opening(x, y, z, height))
+                    break
+                }
+            }
+        }
+        return found.sortedBy { it.first }.take(limit).map { it.second }
+    }
+
+    /** True when (x, feetY, z) has solid blocks on both sides of one horizontal axis — the
+     *  signature of a gap THROUGH something (doorway, gate, mouse-hole) rather than open floor. */
+    private fun isPinchedBetweenWalls(level: ServerLevel, x: Int, feetY: Int, z: Int): Boolean {
+        val pos = BlockPos.MutableBlockPos()
+        fun blocked(ox: Int, oz: Int): Boolean {
+            pos.set(x + ox, feetY, z + oz)
+            return !isPassable(level, pos)
+        }
+        return (blocked(1, 0) && blocked(-1, 0)) || (blocked(0, 1) && blocked(0, -1))
     }
 
     /** Solid enough to stand on and not a liquid: never place a spider on/in water or lava. */
@@ -174,5 +236,19 @@ object SafeGroundFinder {
         if (!level.getFluidState(pos).isEmpty) return false
         val state = level.getBlockState(pos)
         return state.isAir || state.getCollisionShape(level, pos).isEmpty
+    }
+
+    /**
+     * Free space *for getting through a wall*: [isPassable], plus doors, trapdoors and fence
+     * gates whether they are open or SHUT. A closed door has a collision shape, so the plain
+     * passable test reads an ordinary front door as solid wall — which is exactly why the
+     * spider used to ignore doorways. Shut doors are no obstacle to something that can flow
+     * through the frame; tagged so modded doors count too.
+     */
+    private fun isDoorway(level: ServerLevel, pos: BlockPos): Boolean {
+        if (isPassable(level, pos)) return true
+        if (!level.getFluidState(pos).isEmpty) return false
+        val state = level.getBlockState(pos)
+        return state.`is`(BlockTags.DOORS) || state.`is`(BlockTags.TRAPDOORS) || state.`is`(BlockTags.FENCE_GATES)
     }
 }
