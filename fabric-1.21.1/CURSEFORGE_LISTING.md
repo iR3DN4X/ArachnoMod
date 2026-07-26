@@ -205,7 +205,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.6.0 (latest) — all three loaders
+### v1.6.1 (latest) — all three loaders
+- **Corridors: fixed at the root.** The previous attempts hung the anti-climb protection off the *pathfinder* — so the moment the straight line to you cleared (which, inside a tunnel, is exactly when the spider is deepest in it) the protection switched off, the body drifted into a wall, and up through the roof it went. That was the wrong place for it. The body now **checks its own surroundings every tick** — in a corridor it holds the floor and the centre line **whether it's chasing, wandering or standing still**, and lets go the instant it's back in the open. 1×N crawl tunnels and 2×N corridors of any length, in any AI state. 🕳️🕷️
+
+### v1.6.0 — all three loaders
 - **NEW: PERMADEATH — beat it once and it's over.** 🏆 Set **`permadeath = true`** and the spider **never comes back after it is killed in that world**. No 40-minute cooldown, no respawn: you fought the thing, you won, the hunt is done. The victory is written into the **world save**, so it survives quitting, relogging and server restarts — and it's per-world, so a new world is a fresh hunt. **Default is `false`** (it still returns after `respawnAfterKillMinutes`, as always), so nothing changes unless you want it to. Spawn eggs and `/spider newinstance` still work afterwards if you ever want one back. Only genuine kills count — a Peaceful despawn or a chunk unload never robs you of the fight. *(Requested by the community: "make it feel like a boss that needs to be killed so it stops showing up." Now it is one.)*
 
 ### v1.5.3 — all three loaders

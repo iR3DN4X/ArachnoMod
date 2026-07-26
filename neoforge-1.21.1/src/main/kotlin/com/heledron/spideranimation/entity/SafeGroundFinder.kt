@@ -216,6 +216,68 @@ object SafeGroundFinder {
     }
 
     /**
+     * What a tight space is doing to a body sitting at (x, y, z): the floor it should stand on,
+     * and the centre line it must not stray off. Null fields mean "not confined on that count".
+     *
+     * This is deliberately a property of WHERE THE BODY IS, not of what the AI is currently
+     * planning. The chase drops its waypoint the moment the straight line to the player clears
+     * — which, inside a corridor, is exactly when the spider is deepest in the tunnel — so any
+     * protection hung off the pathfinder evaporates at the worst moment and the body drifts
+     * into a wall and gets launched through the roof. Asking the world instead means the spider
+     * is protected in a corridor whether it is chasing, wandering, or standing still.
+     */
+    class Confinement(val floorY: Double?, val laneX: Double?, val laneZ: Double?) {
+        val any get() = floorY != null || laneX != null || laneZ != null
+    }
+
+    private val NOT_CONFINED = Confinement(null, null, null)
+
+    fun confinementAt(level: ServerLevel, x: Double, y: Double, z: Double, bodyHeight: Double): Confinement {
+        val bx = floor(x).toInt()
+        val bz = floor(z).toInt()
+        val startY = floor(y).toInt()
+
+        // The floor beneath the body (a short look — this is about tight spaces, not cliffs).
+        var floorTop = Double.NaN
+        for (dy in 0 downTo -4) {
+            if (isBodyBlocking(level, bx, startY + dy, bz)) { floorTop = (startY + dy + 1).toDouble(); break }
+        }
+        if (floorTop.isNaN()) return NOT_CONFINED
+        val above = y - floorTop
+        if (above > 2.5 || above < -0.5) return NOT_CONFINED   // striding over it, not inside it
+
+        // Walls on both sides of one axis = a corridor, and its centre line is this column.
+        val feetY = floorTop.toInt()
+        val walledX = isBodyBlocking(level, bx + 1, feetY, bz) && isBodyBlocking(level, bx - 1, feetY, bz)
+        val walledZ = isBodyBlocking(level, bx, feetY, bz + 1) && isBodyBlocking(level, bx, feetY, bz - 1)
+        if (!walledX && !walledZ) return NOT_CONFINED
+
+        // Headroom decides whether the height has to be pinned: the collision step casts from a
+        // block ABOVE the body, so a ceiling that close would "hit" and teleport it upward.
+        var headroom = Double.MAX_VALUE
+        for (dy in 0..4) {
+            if (isBodyBlocking(level, bx, feetY + dy, bz)) { headroom = dy.toDouble(); break }
+        }
+        val pinFloor = if (headroom < bodyHeight + 1.5) floorTop else null
+
+        return Confinement(
+            floorY = pinFloor,
+            laneX = if (walledX) bx + 0.5 else null,
+            laneZ = if (walledZ && !walledX) bz + 0.5 else null,
+        )
+    }
+
+    /** Would this block stop the spider's body? (Collision-shaped; a doorway's own door does
+     *  not count — the spider goes through those.) */
+    private fun isBodyBlocking(level: ServerLevel, x: Int, y: Int, z: Int): Boolean {
+        val pos = BlockPos(x, y, z)
+        val state = level.getBlockState(pos)
+        if (state.isAir) return false
+        if (state.`is`(BlockTags.DOORS) || state.`is`(BlockTags.TRAPDOORS) || state.`is`(BlockTags.FENCE_GATES)) return false
+        return !state.getCollisionShape(level, pos).isEmpty
+    }
+
+    /**
      * How far the passage at this opening runs along its axis: the block-centre coordinates of
      * its first and last column. A doorway in a one-block wall gives the same value twice; the
      * tunnel bored through a hillside gives its two mouths. The chase needs this because a

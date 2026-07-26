@@ -3,6 +3,7 @@ package com.heledron.spideranimation.spider
 import com.heledron.spideranimation.Config
 import com.heledron.spideranimation.ecs.Ecs
 import com.heledron.spideranimation.ecs.EcsEntity
+import com.heledron.spideranimation.entity.SafeGroundFinder
 import com.heledron.spideranimation.platform.isOnGround
 import com.heledron.spideranimation.platform.raycastGround
 import com.heledron.spideranimation.platform.resolveCollision
@@ -96,6 +97,28 @@ class SpiderBody(
     // on the roof. Steering alone can't hold a line that tight; this does.
     var passageLaneX: Double? = null
     var passageLaneZ: Double? = null
+
+    // What is ACTUALLY in force this tick: the pathfinder's intent above, merged with what the
+    // body can see around itself (see updateConfinement). The self-detected half is the
+    // important one — the pathfinder drops its waypoint the moment the line to the player
+    // clears, which inside a corridor is precisely when the body still needs holding.
+    private var activePinY: Double? = null
+    private var activeLaneX: Double? = null
+    private var activeLaneZ: Double? = null
+
+    /** Ask the world whether the body is in a tight space right now, and merge that with
+     *  whatever the chase asked for. Runs every tick, in every AI mode. */
+    private fun updateConfinement() {
+        activePinY = passageFloorY
+        activeLaneX = passageLaneX
+        activeLaneZ = passageLaneZ
+
+        val confinement = SafeGroundFinder.confinementAt(
+            level, position.x, position.y, position.z, lerpedGait().bodyHeight)
+        if (activePinY == null) activePinY = confinement.floorY
+        if (activeLaneX == null) activeLaneX = confinement.laneX
+        if (activeLaneZ == null) activeLaneZ = confinement.laneZ
+    }
 
     // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
     private var stationaryTimer = 0
@@ -265,6 +288,7 @@ class SpiderBody(
         }
 
         updatePreferredAngles()
+        updateConfinement()   // must precede calcPreferredY and the collision step below
 
         val groundedLegs = legs.filter { it.isGrounded() }
         val fractionOfLegsGrounded = groundedLegs.size.toDouble() / legs.size
@@ -331,11 +355,11 @@ class SpiderBody(
 
         // Hold the centre line of a passage being threaded, and kill the lateral velocity that
         // is trying to push off it, so the body stays inside the tube for its whole length.
-        passageLaneX?.let { lane -> position.x += (lane - position.x) * 0.6; velocity.x *= 0.2 }
-        passageLaneZ?.let { lane -> position.z += (lane - position.z) * 0.6; velocity.z *= 0.2 }
+        activeLaneX?.let { lane -> position.x += (lane - position.x) * 0.6; velocity.x *= 0.2 }
+        activeLaneZ?.let { lane -> position.z += (lane - position.z) * 0.6; velocity.z *= 0.2 }
 
         // resolve collision
-        val heightPin = passageFloorY ?: squeezeTargetY
+        val heightPin = activePinY ?: squeezeTargetY
         if (heightPin != null) {
             // Threading a doorway, corridor or squeeze-hole: the ceiling is right above the
             // body, and the collision resolve below casts from a block ABOVE it — a point
@@ -589,9 +613,9 @@ class SpiderBody(
         // squeeze size sets the body — and the bite — right on top of the hidden player. The
         // upward normal force only acts when preferredY is ABOVE the body, so lowering targetY
         // both releases the rim-leg hover and engages the downward height correction.
-        // Doorway threading: stand at the opening's own floor, never at whatever height the
+        // Doorway/corridor: stand at the passage's own floor, never at whatever height the
         // legs have wandered off to (the wall top, usually).
-        val passY = passageFloorY
+        val passY = activePinY
         if (passY != null) {
             val standY = passY + lerpedGait().bodyHeight
             if (standY < targetY) targetY = standY
