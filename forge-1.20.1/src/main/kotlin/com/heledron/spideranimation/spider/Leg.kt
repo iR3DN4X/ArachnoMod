@@ -108,6 +108,18 @@ class Leg(
             if (!target.isGrounded || !comfortZone.contains(target.position)) target = strandedTarget()
         }
 
+        // FREE-FALL: release feet the body has outrun. Walking off a ledge leaves each foot
+        // standing up on it, still flagged as planted, while the body plummets away below —
+        // which stretches the leg into a spike pointing straight up, and it can only walk
+        // itself back down after landing (the legs "glitching upward" for a moment after a big
+        // drop). Letting go here means the legs fall WITH the body in their splayed pose and
+        // re-plant together on impact. The comfort-zone test is what keeps this out of the way
+        // of an ordinary shrink-descent, where the feet stay at or below their rest height.
+        if (touchingGround && !spider.onGround &&
+            endEffector.y - restPosition.y > comfortZone.size.vertical) {
+            touchingGround = false
+        }
+
         // inherit parent velocity while airborne
         if (!isGrounded()) {
             endEffector.add(spider.velocity)

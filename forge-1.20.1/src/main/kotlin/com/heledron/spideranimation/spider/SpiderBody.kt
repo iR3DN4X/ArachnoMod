@@ -105,6 +105,12 @@ class SpiderBody(
     private var activePinY: Double? = null
     private var activeLaneX: Double? = null
     private var activeLaneZ: Double? = null
+    private var activeHeadroom: Double? = null
+
+    /** Ceiling height above the floor while the body is in a tight space, else null. SpiderMob
+     *  reads this to cap the size — without it the spider swells back to its distance-based
+     *  size inside a corridor and shoves itself up through the roof. */
+    val confinedHeadroom: Double? get() = activeHeadroom
 
     /** Ask the world whether the body is in a tight space right now, and merge that with
      *  whatever the chase asked for. Runs every tick, in every AI mode. */
@@ -118,6 +124,7 @@ class SpiderBody(
         if (activePinY == null) activePinY = confinement.floorY
         if (activeLaneX == null) activeLaneX = confinement.laneX
         if (activeLaneZ == null) activeLaneZ = confinement.laneZ
+        activeHeadroom = confinement.headroom
     }
 
     // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
@@ -617,7 +624,13 @@ class SpiderBody(
         // legs have wandered off to (the wall top, usually).
         val passY = activePinY
         if (passY != null) {
-            val standY = passY + lerpedGait().bodyHeight
+            // Stand at normal height, or as close under the ceiling as this space allows —
+            // whichever is lower. The ceiling clamp matters while the spider is still shrinking
+            // on its way in: an oversized body would otherwise want a height ABOVE the roof,
+            // and the normal force would happily drive it there.
+            val room = activeHeadroom ?: Double.MAX_VALUE
+            val stand = min(lerpedGait().bodyHeight, (room - 0.3).coerceAtLeast(0.15))
+            val standY = passY + stand
             if (standY < targetY) targetY = standY
         }
 

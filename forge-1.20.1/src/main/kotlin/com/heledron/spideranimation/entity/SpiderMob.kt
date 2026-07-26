@@ -385,6 +385,17 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         if (!squeezing && variant != SpiderVariant.HUNTER) {
             ecsEntity?.let { SpiderAI.passageFitScale(it) }?.let { targetScale = targetScale.coerceAtMost(it) }
         }
+        // HARD CEILING CAP: whatever the distance, the water or the variant wants, a body in a
+        // tight space may never be taller than that space. This is the fix for "it inflates
+        // inside the tunnel and shoots up through the roof": the shrink used to be requested by
+        // the pathfinder, which stops asking the moment the line to the player is clear — which
+        // inside a corridor is exactly when it's deepest in. The body's own headroom reading
+        // doesn't care what the AI is doing.
+        body.confinedHeadroom?.let { room ->
+            val perScale = body.walkGait.stationary.bodyHeight / body.sizeScale.coerceAtLeast(0.01)
+            val fit = ((room - 0.2) / (perScale + 0.3)).coerceAtLeast(0.12)
+            targetScale = targetScale.coerceAtMost(fit)
+        }
         currentScale = approachScale(currentScale, targetScale)
         body.setSizeScale(currentScale)
 

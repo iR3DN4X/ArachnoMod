@@ -205,7 +205,11 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.6.1 (latest) — all three loaders
+### v1.6.2 (latest) — all three loaders
+- **Corridors: the missing half.** v1.6.1 stopped the spider drifting into tunnel walls, but it could still **inflate** once inside — the shrink was requested by the pathfinder, which stops asking the moment the straight line to you is clear (i.e. exactly when it's deepest in the tunnel), so it swelled back toward its distance-based size, decided it wanted to stand taller than the roof, and pushed itself up through it. Now the body caps its own size to the space it's standing in: **in a tight place it simply cannot be taller than the ceiling**, no matter what the distance sizing, the water rule or the variant wants. Out in the open, nothing is capped — it's still a kaiju. 🕳️
+- **Fixed: legs no longer point skyward after a big fall.** Walking off a cliff left each foot standing up on the ledge, still flagged as planted, while the body plummeted away — stretching the legs into upward spikes that only sorted themselves out several seconds after landing. The legs now let go when the body outruns them, fall *with* it in a splayed pose, and plant together on impact. 🕷️
+
+### v1.6.1 — all three loaders
 - **Corridors: fixed at the root.** The previous attempts hung the anti-climb protection off the *pathfinder* — so the moment the straight line to you cleared (which, inside a tunnel, is exactly when the spider is deepest in it) the protection switched off, the body drifted into a wall, and up through the roof it went. That was the wrong place for it. The body now **checks its own surroundings every tick** — in a corridor it holds the floor and the centre line **whether it's chasing, wandering or standing still**, and lets go the instant it's back in the open. 1×N crawl tunnels and 2×N corridors of any length, in any AI state. 🕳️🕷️
 
 ### v1.6.0 — all three loaders

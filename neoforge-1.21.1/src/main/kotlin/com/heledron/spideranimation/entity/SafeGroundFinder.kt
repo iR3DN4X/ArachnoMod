@@ -226,7 +226,15 @@ object SafeGroundFinder {
      * into a wall and gets launched through the roof. Asking the world instead means the spider
      * is protected in a corridor whether it is chasing, wandering, or standing still.
      */
-    class Confinement(val floorY: Double?, val laneX: Double?, val laneZ: Double?) {
+    class Confinement(
+        val floorY: Double?,
+        val laneX: Double?,
+        val laneZ: Double?,
+        /** Ceiling height above the floor, when there is a ceiling worth caring about. This is
+         *  what stops the spider INFLATING back to its distance-based size inside a tunnel and
+         *  ramming its way out through the roof. */
+        val headroom: Double? = null,
+    ) {
         val any get() = floorY != null || laneX != null || laneZ != null
     }
 
@@ -258,12 +266,15 @@ object SafeGroundFinder {
         for (dy in 0..4) {
             if (isBodyBlocking(level, bx, feetY + dy, bz)) { headroom = dy.toDouble(); break }
         }
+        // A ceiling at all means the size has to be capped; a LOW one also pins the height.
+        val roofed = headroom != Double.MAX_VALUE
         val pinFloor = if (headroom < bodyHeight + 1.5) floorTop else null
 
         return Confinement(
             floorY = pinFloor,
             laneX = if (walledX) bx + 0.5 else null,
             laneZ = if (walledZ && !walledX) bz + 0.5 else null,
+            headroom = if (roofed) headroom else null,
         )
     }
 
