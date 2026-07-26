@@ -8,6 +8,9 @@ import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.Difficulty
+import net.minecraft.world.level.storage.LevelResource
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -103,7 +106,62 @@ object SpiderSpawnManager {
         pendingPeacefulExit = false
         abandonedTicks = 0
         janitorTimer = 0
+        stateLoaded = false     // the next world loads its own kill record
+        killCount = 0
     }
+
+    // ---- Permadeath: the one thing that must outlive the session -----------------------------
+    // Every other timer here lives in memory, which is fine for a cooldown but useless for
+    // "killed for good" — a relog would resurrect it. So the kill tally is written into the
+    // world folder. A tiny text file rather than vanilla SavedData on purpose: SavedData's API
+    // differs between 1.20.1 and 1.21.1, and this keeps one identical file across all loaders.
+    private const val STATE_FILE = "arachnomod_state.txt"
+    private var stateLoaded = false
+    private var killCount = 0
+
+    private fun stateFile(server: MinecraftServer): Path =
+        server.getWorldPath(LevelResource.ROOT).resolve("data").resolve(STATE_FILE)
+
+    private fun loadState(server: MinecraftServer) {
+        stateLoaded = true
+        killCount = 0
+        try {
+            val file = stateFile(server)
+            if (!Files.exists(file)) return
+            for (line in Files.readAllLines(file)) {
+                val trimmed = line.trim()
+                if (trimmed.startsWith("kills=")) {
+                    killCount = trimmed.removePrefix("kills=").trim().toIntOrNull() ?: 0
+                }
+            }
+        } catch (e: Exception) {
+            killCount = 0   // unreadable record: treat the world as unclaimed rather than break
+        }
+    }
+
+    private fun saveState(server: MinecraftServer) {
+        try {
+            val file = stateFile(server)
+            Files.createDirectories(file.parent)
+            Files.write(file, listOf("kills=$killCount"))
+        } catch (e: Exception) {
+            // Can't write (read-only world dir?): permadeath just won't survive this restart.
+        }
+    }
+
+    /**
+     * A spider was genuinely KILLED (called from the same funnel that rolls the trophy, so
+     * peaceful despawns, chunk unloads and dimension follows never count). With permadeath on,
+     * this is the last one that will ever hunt this world.
+     */
+    fun notifyKilled(server: MinecraftServer) {
+        if (!stateLoaded) loadState(server)
+        killCount++
+        saveState(server)
+    }
+
+    /** How many spiders have been slain in this world (persisted). */
+    fun kills(): Int = killCount
 
     // Set while the difficulty is Peaceful: the moment peace ends, the hunt resumes on the SHORT
     // post-peaceful timer (peacefulExitSpawnMinutes, default 1 min) instead of the 5-30 min roll.
@@ -115,6 +173,7 @@ object SpiderSpawnManager {
 
     fun tick(server: MinecraftServer) {
         janitorSweep(server)
+        if (!stateLoaded) loadState(server)
 
         // Peaceful: monsters don't exist. The mob itself despawns via the vanilla peaceful check;
         // here we pause natural spawning too, so it doesn't churn spawn/despawn cycles.
@@ -159,6 +218,13 @@ object SpiderSpawnManager {
             // "discard" was the peaceful despawn, not a kill — leave it to the fast timer below.
             if (pendingPeacefulExit) respawnTimer = -1
             else arm(killRespawnTicks(), ScheduleKind.KILL_COOLDOWN)
+        }
+
+        // PERMADEATH: it was slain in this world and the hunt is over. Natural spawning stops
+        // for good; a spawn egg or /spider newinstance still works for anyone who wants it back.
+        if (Config.PERMADEATH.get() && killCount > 0) {
+            respawnTimer = -1
+            return
         }
 
         val players = server.playerList.players

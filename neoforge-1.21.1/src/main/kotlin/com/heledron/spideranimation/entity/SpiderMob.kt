@@ -517,6 +517,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private fun rollTrophy(level: ServerLevel) {
         if (trophyRolled) return
         trophyRolled = true
+        // Same funnel = same guarantees: this fires on every real death and never on a peaceful
+        // despawn, chunk unload or dimension follow, which is exactly what permadeath needs.
+        SpiderSpawnManager.notifyKilled(level.server)
         // The ENRAGED boss always pays out: a FULL netherite block where one ingot went in.
         val trophyItem = if (enraged) Items.NETHERITE_BLOCK else Items.NETHERITE_INGOT
         if (!enraged && random.nextFloat() >= Config.NETHERITE_DROP_CHANCE.get()) return

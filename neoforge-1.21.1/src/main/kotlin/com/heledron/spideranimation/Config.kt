@@ -147,6 +147,11 @@ object Config {
     val RESPAWN_AFTER_KILL_MINUTES = define("respawnAfterKillMinutes", 40.0, 0.05, 1440.0,
         "Minutes until the next spider after one is KILLED (40 = 2 Minecraft days).",
         "Slaying it buys real peace; spawnMin/spawnMax only govern the FIRST spawn.")
+    val PERMADEATH = define("permadeath", false,
+        "BOSS MODE: if true, the spider NEVER comes back once it has been killed in this world.",
+        "One kill ends the hunt for good - the victory is written into the world save, so it",
+        "survives restarts. Spawn eggs and /spider newinstance still work if you want one back.",
+        "Default false: it returns after respawnAfterKillMinutes.")
     val SPAWN_DISTANCE_MIN = define("spawnDistanceMin", 30.0, 4.0, 128.0,
         "Closest distance (blocks) from a player that a spider may naturally spawn.")
     val SPAWN_DISTANCE_MAX = define("spawnDistanceMax", 34.0, 4.0, 128.0,

@@ -65,6 +65,7 @@ ArachnoMod runs on **three loaders**:
 *   **Taming & riding.** A creative-only **Spider Tamer** makes it docile, then you can **ride it like a mount** (see below).
 *   **ENRAGE it — if you dare.** ⚡ Right-click the netherite spider with a **netherite ingot** — feed it the very metal it's made of — and it becomes the **Enraged Netherite Spider**: a true boss with a **red boss bar**, more health (700), 1.5× speed, a **10-heart bite**, and a crackling aura of red rage-dust and blue lightning sparks. Kill it and it **always drops a FULL netherite block** — nine ingots back for the one you fed it. Risk it for the biscuit.
 *   **Peaceful-safe.** On Peaceful difficulty it despawns and natural spawns pause, like any monster.
+*   **Optional PERMADEATH.** 🏆 Prefer it to be a boss you can actually *finish*? Set `permadeath = true` and killing it once ends the hunt in that world — permanently, saved to the world, surviving restarts. Off by default.
 *   **Fully configurable & hot-reloading.** Every gameplay number lives in a commented config file you can edit live (see Configuration).
 *   **Spawn egg included** — spawn your own Netherite Octoarachnopod from the creative menu.
 
@@ -81,7 +82,7 @@ All under `/spider`:
 | <code>/spider release</code> |Dismisses your personal spider.                                                                               |Anyone                   |
 | <code>/spider chasedistance &lt;blocks&gt;</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
 | <code>/spider config &lt;key&gt; get</code> |Shows any config value in chat.                                                                               |Ops (permission level 2) |
-| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 53 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 54 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
 
 ***
 
@@ -96,6 +97,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>spawnMinMinutes</code> |1.0     |Min minutes before the FIRST spider of a session spawns                     |
 | <code>spawnMaxMinutes</code> |1.0     |Max minutes before the FIRST spawn (random between the two)                 |
 | <code>respawnAfterKillMinutes</code> |40.0    |Cooldown after the spider is KILLED (40 = 2 Minecraft days of earned peace) |
+| <code>permadeath</code> |false   |BOSS MODE: kill it once and it NEVER returns in that world (saved to the world, survives restarts) |
 | <code>peacefulExitSpawnMinutes</code> |1.0     |The spider returns this many minutes after Peaceful is switched off 😈      |
 | <code>spawnDistanceMin</code> |30.0    |Closest a spider naturally spawns from a player (blocks)                    |
 | <code>spawnDistanceMax</code> |34.0    |Farthest a spider naturally spawns from a player (blocks)                   |
@@ -203,7 +205,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.5.3 (latest) — all three loaders
+### v1.6.0 (latest) — all three loaders
+- **NEW: PERMADEATH — beat it once and it's over.** 🏆 Set **`permadeath = true`** and the spider **never comes back after it is killed in that world**. No 40-minute cooldown, no respawn: you fought the thing, you won, the hunt is done. The victory is written into the **world save**, so it survives quitting, relogging and server restarts — and it's per-world, so a new world is a fresh hunt. **Default is `false`** (it still returns after `respawnAfterKillMinutes`, as always), so nothing changes unless you want it to. Spawn eggs and `/spider newinstance` still work afterwards if you ever want one back. Only genuine kills count — a Peaceful despawn or a chunk unload never robs you of the fight. *(Requested by the community: "make it feel like a boss that needs to be killed so it stops showing up." Now it is one.)*
+
+### v1.5.3 — all three loaders
 - **Tunnels work now, not just doorways.** 🕳️ A one-block-thick doorway is one step through; a **corridor** means holding a one-block-wide line for its whole length, and the spider couldn't — it drifted a few centimetres into a wall and got launched up through the roof. Now it **measures the passage end to end**, walks in on the centre line, and is **held on that line until it comes out the far side** — through a 6-block tunnel, a mineshaft, a hallway, whatever you dug. The upward "teleport" is gone at the source: while inside anything tight, the collision step that was shoving it up a block per tick is disabled outright (that also quietly fixes the same lurch in 1×1 squeeze-holes). Long crawl tunnels work too — though the fixed-size hunter still won't fit a 1-high one, and has to find another way in. 🕷️
 
 ### v1.5.2 — all three loaders
