@@ -283,6 +283,12 @@ object Config {
     val HUNTER_SPEED_MULTIPLIER = DoubleValue("hunterSpeedMultiplier", 1.6, 1.0, 8.0,
         comment("The HUNTER's speed (x base chase speed) while it moves - faster up close than any",
                 "other variant. It only moves while nobody is looking at it."))
+    val HUNTER_BLINDNESS_RANGE = DoubleValue("hunterBlindnessRange", 16.0, 0.0, 128.0,
+        comment("How close (blocks) the stalking HUNTER has to be before it blinds you. While you stay",
+                "inside this range it keeps the blindness topped up - the only way to clear it is to",
+                "actually get away from it. Set to 0 to disable the blindness entirely."))
+    val HUNTER_BLINDNESS_SECONDS = DoubleValue("hunterBlindnessSeconds", 30.0, 1.0, 3600.0,
+        comment("How long (seconds) the HUNTER's blindness lasts once you are out of its range."))
     val ATTACK_DAMAGE_HEARTS = DoubleValue("attackDamageHearts", 6.0, 0.0, 100.0,
         comment("Melee damage in HEARTS per hit."))
     val POISON_ATTACK_DAMAGE_HEARTS = DoubleValue("poisonAttackDamageHearts", 3.0, 0.0, 100.0,

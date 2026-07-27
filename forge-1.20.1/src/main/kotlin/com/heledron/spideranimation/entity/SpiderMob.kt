@@ -72,6 +72,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private var body: SpiderBody? = null
     private var ecsEntity: EcsEntity? = null
     private var attackCooldown = 0
+    private var blindnessCooldown = 0
     private var currentScale = 1.0
 
     /** Set by the spawn manager BEFORE the first tick (the body is built lazily on tick 1). */
@@ -103,6 +104,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // The poison variant starts its rear-up + lunge when the player is within this many
         // bite-reaches: far enough for the leap to read as a leap, close enough to connect.
         const val LUNGE_RANGE_FACTOR = 2.2
+        // How often the hunter tops up its blindness while you stay in range. Well under the
+        // effect's own duration, so it never lapses until you actually escape.
+        const val BLINDNESS_REFRESH_TICKS = 40
 
         // Registration-time defaults; the real max health from the config is applied per-instance
         // in ensureBody (attributes are built before configs are guaranteed loaded).
@@ -415,7 +419,29 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // range it REARS UP with its front legs raised (the telegraph), LUNGES, and only a bite
         // landed out of that lunge connects — for less damage, but with Poison II in it.
         if (attackCooldown > 0) attackCooldown--
+        if (blindnessCooldown > 0) blindnessCooldown--
         val hunting = ecsEntity?.let { SpiderAI.isChasing(it) } ?: false
+
+        // THE HUNTER'S DARK: while it is stalking, anyone inside hunterBlindnessRange goes
+        // blind — and it keeps the blindness topped up for as long as they stay in range, so
+        // the only cure is to actually put distance between you and it. A thing that only
+        // moves when you aren't looking, in a world where you can't look. Blinding everyone in
+        // range rather than just its current quarry matters on servers: standing next to the
+        // victim is not a safe seat.
+        val blindRange = Config.HUNTER_BLINDNESS_RANGE.get()
+        if (variant == SpiderVariant.HUNTER && !tamed && hunting &&
+            blindRange > 0.0 && blindnessCooldown <= 0) {
+            val blindTicks = (Config.HUNTER_BLINDNESS_SECONDS.get() * 20.0).toInt().coerceAtLeast(1)
+            var blinded = false
+            for (player in level.players()) {
+                if (!player.isAlive) continue
+                val distSqr = player.distanceToSqr(body.position.x, body.position.y, body.position.z)
+                if (distSqr > blindRange * blindRange) continue
+                player.addEffect(MobEffectInstance(MobEffects.BLINDNESS, blindTicks, 0), this)
+                blinded = true
+            }
+            if (blinded) blindnessCooldown = BLINDNESS_REFRESH_TICKS
+        }
         if (!tamed && hunting && nearest != null && nearest.isAlive) {
             val reach = ATTACK_REACH * currentScale.coerceAtMost(REACH_SCALE_CAP)
             val distSqr = nearest.distanceToSqr(body.position.x, body.position.y, body.position.z)
