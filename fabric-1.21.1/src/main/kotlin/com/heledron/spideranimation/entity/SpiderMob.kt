@@ -390,10 +390,19 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // the pathfinder, which stops asking the moment the line to the player is clear — which
         // inside a corridor is exactly when it's deepest in. The body's own headroom reading
         // doesn't care what the AI is doing.
-        body.confinedHeadroom?.let { room ->
-            val perScale = body.walkGait.stationary.bodyHeight / body.sizeScale.coerceAtLeast(0.01)
-            val fit = ((room - 0.2) / (perScale + 0.3)).coerceAtLeast(0.12)
-            targetScale = targetScale.coerceAtMost(fit)
+        val perScale = body.walkGait.stationary.bodyHeight / body.sizeScale.coerceAtLeast(0.01)
+        fun fitFor(room: Double) = ((room - 0.2) / (perScale + 0.3)).coerceAtLeast(0.12)
+        body.confinedHeadroom?.let { targetScale = targetScale.coerceAtMost(fitFor(it)) }
+        // ...and size down for the space the PLAYER is in, once close enough to be coming for
+        // them. Standing at the mouth of a corridor, the straight line to the player reads as
+        // walkable, so the pathfinder never engages its threading — the spider just walked up
+        // at full size and climbed the hillside instead of coming in. Sizing to fit where the
+        // prey is standing makes it able to follow them in regardless of what the AI decided.
+        if (!squeezing && nearest != null && horizontalDistance < 14.0) {
+            SafeGroundFinder.confinementAt(level, nearest.x, nearest.y + 0.5, nearest.z,
+                body.walkGait.stationary.bodyHeight).headroom?.let { room ->
+                targetScale = targetScale.coerceAtMost(fitFor(room))
+            }
         }
         currentScale = approachScale(currentScale, targetScale)
         body.setSizeScale(currentScale)
