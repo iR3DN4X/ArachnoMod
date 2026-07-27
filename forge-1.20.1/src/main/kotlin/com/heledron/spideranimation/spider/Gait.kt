@@ -160,7 +160,13 @@ object WalkGaitType {
         if (samePair.any { it.target.isGrounded && it.timeSinceBeginMove < spider.gait.samePairCooldown }) return false
 
         val wantsToMove = leg.isOutsideTriggerZone || !leg.touchingGround
-        val alreadyAtTarget = leg.endEffector.distanceSquared(leg.target.position) < 0.01
+        // "Already there" is only a reason to stay put if the foot arrived on actual GROUND.
+        // When no ground can be found the target is a point in mid-air, and a foot that flies
+        // to one used to deadlock: it can't step (it has arrived) and it can't land (there is
+        // nothing there), so the leg hangs stranded — and because the gait makes neighbours
+        // wait on an ungrounded leg, one stuck leg freezes the ones beside it.
+        val alreadyAtTarget = leg.target.isGrounded &&
+            leg.endEffector.distanceSquared(leg.target.position) < 0.01
         val onGround = spider.legs.any { it.isGrounded() } || spider.onGround
 
         return wantsToMove && !alreadyAtTarget && onGround

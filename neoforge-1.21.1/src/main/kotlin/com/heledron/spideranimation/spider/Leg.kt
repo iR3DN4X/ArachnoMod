@@ -43,6 +43,7 @@ class Leg(
     var isMoving = false; private set
     var timeSinceBeginMove = 0; private set
     var timeSinceStopMove = 0; private set
+    private var ticksOffGround = 0
 
     var isDisabled = false
     var isPrimary = false
@@ -171,6 +172,54 @@ class Leg(
             if (canMove) {
                 isMoving = true
                 timeSinceBeginMove = 0
+            }
+        }
+
+        // STUCK RECOVERY. Whatever else went wrong, a leg should never hang in the air while
+        // the spider is standing on solid ground. If one does — a stranded target it can't
+        // step off, a foot left behind by a fall, ground that moved out from under it — hunt
+        // straight down from where the foot belongs and put it back. Cheap, and it means no
+        // single stuck leg can wedge the gait (its neighbours wait on it) for more than a
+        // second.
+        // NOTE the support test: `spider.onGround` means the BODY is resting on the ground,
+        // which for this spider is almost never true — it stands with its body held up at leg
+        // height. Gating recovery on that (as a first attempt did) meant it effectively never
+        // ran. What matters is whether the spider is standing at all, i.e. some other leg is
+        // carrying it.
+        // Don't test `isMoving` here: a leg parked on a mid-air target flickers it on and off
+        // every single tick (fly to the phantom target, arrive, get re-authorised, repeat),
+        // which resets any counter that looks at it. Time spent off the ground is the honest
+        // measure — a real step only ever takes a handful of ticks at any size.
+        val supported = spider.onGround || spider.legs.any { it !== this && it.isGrounded() }
+        if (!touchingGround && supported) ticksOffGround++ else ticksOffGround = 0
+        if (ticksOffGround > 8) {   // ~0.4s worst case; a real step never takes half that
+            ticksOffGround = 0
+            val bodyHeight = spider.lerpedGait().bodyHeight
+            val lift = Vector3d(0.0, bodyHeight * 1.5, 0.0)
+            var hit = spider.level.raycastGround(restPosition.copy().add(lift), DOWN_VECTOR, bodyHeight * 4.0)
+            // Nothing under where the foot belongs — it is dangling over a drop. Walk the probe
+            // back in toward the body until it finds footing, so the leg tucks onto solid
+            // ground at the lip instead of hanging in the void forever.
+            if (hit == null) {
+                val inward = spider.position.copy().subtract(restPosition)
+                inward.y = 0.0
+                if (inward.lengthSquared() > 1.0e-6) {
+                    inward.normalize()
+                    for (step in 1..4) {
+                        val probe = restPosition.copy()
+                            .add(inward.copy().multiply(step * 0.5 * bodyHeight))
+                            .add(lift)
+                        hit = spider.level.raycastGround(probe, DOWN_VECTOR, bodyHeight * 4.0)
+                        if (hit != null) break
+                    }
+                }
+            }
+            if (hit != null) {
+                endEffector.set(hit)
+                target = LegTarget(position = hit.copy(), isGrounded = true, id = -2)
+                touchingGround = true
+                isMoving = false
+                didStep = true
             }
         }
 

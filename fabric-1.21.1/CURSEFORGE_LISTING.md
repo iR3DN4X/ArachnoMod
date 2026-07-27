@@ -205,7 +205,11 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.6.3 (latest) — all three loaders
+### v1.6.4 (latest) — all three loaders
+- **Fixed: legs no longer get stuck hanging in the air.** 🕷️ A leg that couldn't find footing — over a ledge, a cliff edge, a gap — was given a target in *mid-air*, and then deadlocked: it couldn't step (it had "arrived") and it couldn't land (there was nothing there), so it hung stranded until the spider wandered away. And because the gait makes neighbouring legs wait on an ungrounded one, a single stuck leg could freeze half the spider. Two fixes: arriving at thin air no longer counts as arriving, and **any leg left off the ground for more than a moment while the spider is standing hunts straight down and re-plants itself** — tucking in toward the body if it's dangling over a drop. Verified with a real spider perched on a cliff lip: previously two legs hung permanently, now none.
+- **Falls settle almost instantly.** Combined with the reach fix, a spider dropped 20 blocks now has every foot planted within about a second of landing, and never draws the stretched-out upright legs at any point during the fall.
+
+### v1.6.3 — all three loaders
 - **It comes in even when you're standing right inside the entrance.** Corridors worked if you ran deep inside, but if you waited at the mouth the spider stayed out and climbed the hillside instead — from there the straight line to you looks perfectly walkable, so it never realised it had to squeeze in at all. It now checks whether **it actually fits where you are standing**, and if it doesn't, it hunts for the way in and sizes down to follow you — no matter how inviting the line to you looks. 🚪
 - **Fixed properly: no more legs standing straight up after a fall.** The previous attempt only released a foot while the spider was still airborne, and only after a drop that scaled with its size — so a big spider landed with its feet still up on the ledge, legs stretched into spikes. The test is now simply **whether the leg can still reach its foot**: if it can't, it lets go immediately and the foot is pulled back within reach, so the spike never renders at all. Works at any size, mid-fall or landed. 🕷️
 
