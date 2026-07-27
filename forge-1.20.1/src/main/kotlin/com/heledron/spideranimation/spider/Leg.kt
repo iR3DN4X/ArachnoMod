@@ -108,13 +108,28 @@ class Leg(
             if (!target.isGrounded || !comfortZone.contains(target.position)) target = strandedTarget()
         }
 
-        // FREE-FALL: release feet the body has outrun. Walking off a ledge leaves each foot
-        // standing up on it, still flagged as planted, while the body plummets away below —
-        // which stretches the leg into a spike pointing straight up, and it can only walk
-        // itself back down after landing (the legs "glitching upward" for a moment after a big
-        // drop). Letting go here means the legs fall WITH the body in their splayed pose and
-        // re-plant together on impact. The comfort-zone test is what keeps this out of the way
-        // of an ordinary shrink-descent, where the feet stay at or below their rest height.
+        // OUT OF REACH: a foot the leg physically cannot reach any more. FABRIK responds by
+        // pointing the whole chain straight at it, which is exactly the spike of legs standing
+        // upright after a hard fall — the body outran its feet, they stayed up on the ledge,
+        // and nothing let go of them. Reach is the honest test here: it is scale-correct (a
+        // giant's legs reach much further than a small one's) and it applies whether the spider
+        // is still falling or has already landed, which the old airborne-only check did not.
+        // The foot is also pulled back inside the leg's reach so it never renders as a spike
+        // for even one frame; the gait then steps it down normally.
+        val reach = legPlan.segments.sumOf { it.length }
+        if (reach > 0.0 && endEffector.distance(attachmentPosition) > reach * 0.95) {
+            touchingGround = false
+            val pullBack = endEffector.copy().subtract(attachmentPosition)
+            if (pullBack.lengthSquared() > 1.0e-6) {
+                pullBack.normalize().multiply(reach * 0.9)
+                endEffector.set(attachmentPosition.copy().add(pullBack))
+            }
+        }
+
+        // FREE-FALL: release feet the body has outrun, so the legs fall WITH it in their
+        // splayed pose and re-plant together on impact instead of trailing behind it. The
+        // comfort-zone test keeps this clear of an ordinary shrink-descent, where the feet stay
+        // at or below their rest height.
         if (touchingGround && !spider.onGround &&
             endEffector.y - restPosition.y > comfortZone.size.vertical) {
             touchingGround = false

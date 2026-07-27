@@ -205,7 +205,11 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.6.2 (latest) — all three loaders
+### v1.6.3 (latest) — all three loaders
+- **It comes in even when you're standing right inside the entrance.** Corridors worked if you ran deep inside, but if you waited at the mouth the spider stayed out and climbed the hillside instead — from there the straight line to you looks perfectly walkable, so it never realised it had to squeeze in at all. It now checks whether **it actually fits where you are standing**, and if it doesn't, it hunts for the way in and sizes down to follow you — no matter how inviting the line to you looks. 🚪
+- **Fixed properly: no more legs standing straight up after a fall.** The previous attempt only released a foot while the spider was still airborne, and only after a drop that scaled with its size — so a big spider landed with its feet still up on the ledge, legs stretched into spikes. The test is now simply **whether the leg can still reach its foot**: if it can't, it lets go immediately and the foot is pulled back within reach, so the spike never renders at all. Works at any size, mid-fall or landed. 🕷️
+
+### v1.6.2 — all three loaders
 - **Corridors: the missing half.** v1.6.1 stopped the spider drifting into tunnel walls, but it could still **inflate** once inside — the shrink was requested by the pathfinder, which stops asking the moment the straight line to you is clear (i.e. exactly when it's deepest in the tunnel), so it swelled back toward its distance-based size, decided it wanted to stand taller than the roof, and pushed itself up through it. Now the body caps its own size to the space it's standing in: **in a tight place it simply cannot be taller than the ceiling**, no matter what the distance sizing, the water rule or the variant wants. Out in the open, nothing is capped — it's still a kaiju. 🕳️
 - **Fixed: legs no longer point skyward after a big fall.** Walking off a cliff left each foot standing up on the ledge, still flagged as planted, while the body plummeted away — stretching the legs into upward spikes that only sorted themselves out several seconds after landing. The legs now let go when the body outruns them, fall *with* it in a splayed pose, and plant together on impact. 🕷️
 

@@ -402,7 +402,17 @@ object SpiderAI {
 
         val direct = probeLine(level, body.position.x, body.position.z, startGround,
             dirX, dirZ, min(horizontal, CHASE_LOOKAHEAD), maxClimb, maxDrop)
-        if (direct.walkable) {
+
+        // Can this body even fit where the player is standing? With the player just inside a
+        // corridor mouth the straight line to them reads as perfectly walkable, so the chase
+        // used to charge at full size, meet the wall beside the entrance, and climb it. If the
+        // prey is somewhere too low for the spider as it currently is, that line is a lie:
+        // hunt for the way in and thread it instead.
+        val playerRoom = SafeGroundFinder.confinementAt(
+            level, player.x, player.y + 0.5, player.z, bodyHeight).headroom
+        val tooBigForPlayersSpot = playerRoom != null && playerRoom < bodyHeight + 0.5
+
+        if (direct.walkable && !tooBigForPlayersSpot) {
             clearOpening(state)   // through it (or never needed one)
             return null
         }
@@ -420,7 +430,14 @@ object SpiderAI {
         // somewhere), committed to for a while so it walks a straight line to your door
         // instead of dithering. It shrinks to fit only once it's close, so the approach still
         // looks like a full-size spider bearing down on the house.
-        val opening = commitOpening(body, state, player, direct, minOpening, startGround, maxClimb, maxDrop)
+        // Where to hunt for the way in: around the point the line hit a wall — or, when the
+        // line never hit anything and the problem is simply that the spider is too big for
+        // where the player is, around the PLAYER (the probe carries no hit point in that case).
+        val scanX = if (direct.walkable) player.x else direct.hitX
+        val scanZ = if (direct.walkable) player.z else direct.hitZ
+        val scanY = if (direct.walkable) player.y else direct.endGroundY
+
+        val opening = commitOpening(body, state, player, scanX, scanZ, scanY, minOpening, startGround, maxClimb, maxDrop)
         if (opening != null) return threadOpening(body, state, opening)
 
         for (angle in STEER_ANGLES) {
@@ -501,7 +518,7 @@ object SpiderAI {
      */
     private fun commitOpening(
         body: SpiderBody, state: SpiderAIState, player: ServerPlayer,
-        direct: LineProbe, minOpening: Int,
+        scanX: Double, scanZ: Double, scanY: Double, minOpening: Int,
         startGround: Double, maxClimb: Double, maxDrop: Double,
     ): SafeGroundFinder.Opening? {
         if (state.openingTimer > 0) {
@@ -517,7 +534,7 @@ object SpiderAI {
         // fixating on the far side of the building (or on a gap it would have to pass through
         // the wall to use) — it always picks the way in that its own side of the wall offers.
         val candidates = SafeGroundFinder.collectOpenings(
-            body.level, direct.hitX, direct.hitZ, direct.endGroundY,
+            body.level, scanX, scanZ, scanY,
             player.x, player.z, OPENING_SEARCH_RADIUS, minOpening,
         )
         val found = candidates.firstOrNull { canReach(body, startGround, it, maxClimb, maxDrop, minOpening) }
