@@ -1,0 +1,726 @@
+package com.heledron.spideranimation.spider
+
+import com.heledron.spideranimation.Config
+import com.heledron.spideranimation.ecs.Ecs
+import com.heledron.spideranimation.ecs.EcsEntity
+import com.heledron.spideranimation.entity.SafeGroundFinder
+import com.heledron.spideranimation.platform.isOnGround
+import com.heledron.spideranimation.platform.raycastGround
+import com.heledron.spideranimation.platform.resolveCollision
+import com.heledron.spideranimation.util.*
+import net.minecraft.server.level.ServerLevel
+import org.joml.Quaterniond
+import org.joml.Quaternionf
+import org.joml.Vector2d
+import org.joml.Vector3d
+import org.joml.Vector3f
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
+
+class SpiderBodyHitGroundEvent(val spider: SpiderBody)
+
+// Terminal speed (blocks/tick) for the symmetric height correction's downward pull — fast enough
+// that a shrinking giant's body keeps pace with the ~0.7s shrink (it must drop ~15 blocks), slow
+// enough not to slam into the ground (the pull tapers to the exact remaining gap near arrival).
+private const val MAX_DESCENT_SPEED = 1.2
+
+// The poison variant's tarantula strike (see beginLunge/updateLunge): telegraph ticks with the
+// front legs raised, then the forward-burst ticks that form the bite window, and the impulse
+// speed (blocks/tick at size 1, scaled by the spider's size).
+private const val LUNGE_REAR_TICKS = 8
+private const val LUNGE_STRIKE_TICKS = 6
+private const val LUNGE_SPEED = 0.9
+
+/*
+ * Ported from `spider/components/body/SpiderBody.kt`. Bukkit World/Vector/Location replaced with
+ * ServerLevel / Vector3d / (level + position + orientation). The physics, gait blending, support
+ * polygon and normal-force logic are otherwise faithful to the original.
+ */
+class SpiderBody(
+    val level: ServerLevel,
+    val position: Vector3d,
+    val orientation: Quaternionf,
+    var bodyPlan: BodyPlan,
+    var gallopGait: Gait,
+    var walkGait: Gait,
+) {
+    var onGround = false; private set
+    var legs: List<Leg> = emptyList()
+    var normal: NormalInfo? = null; private set
+    var normalAcceleration = Vector3d(0.0, 0.0, 0.0); private set
+
+    // params
+    var gallop = false
+    val gait get() = if (gallop) gallopGait else walkGait
+
+    // state
+    var isWalking = false
+    var isRotatingYaw = false
+
+    // When true, something else (a rider or the /spider possession) is driving this body's
+    // behaviour — the default "chase the nearest player" system must leave it alone.
+    var manualControl = false
+
+    // Which visual variant this body belongs to ("netherite", "camo", ...). The default variant
+    // always keeps its iconic netherite step/fall sounds; other variants use the configurable
+    // variant sounds (see the LegStepEvent handler in AppState).
+    var variantKey = "netherite"
+
+    // Boss mode (netherite fed a netherite ingot): SpiderMob sets this so SpiderAI can apply
+    // the enraged chase-speed multiplier. Everything else about the rage lives on the mob.
+    var enraged = false
+
+    // THE SQUEEZE descent: while pressing over a dug-in player at squeeze size, SpiderAI sets
+    // this to the player's Y every tick (null otherwise). calcPreferredY then aims the body at
+    // the floor of their hole instead of the leg-average height — the legs stand AROUND a 1x1
+    // hole, never in it, so without this the body hovers at the lip forever, held up by the
+    // grounded rim legs, no matter how small it shrinks.
+    var squeezeTargetY: Double? = null
+
+    // THREADING A DOORWAY: the floor level of the opening the spider is going through, or null.
+    // Without this the legs plant on top of the wall as it arrives, the leg-average pulls the
+    // preferred height up with them, and the body climbs the building instead of walking
+    // through the door — the "it just teleports upward" report. Pinning the preferred height to
+    // the doorway floor both kills that climb and stops the upward normal force (which only
+    // acts when the preferred height is ABOVE the body).
+    var passageFloorY: Double? = null
+
+    // ...and the centre line of that passage: the body's OFF-AXIS coordinate is held here while
+    // it threads through (only one of the two is ever set). A corridor is one block wide, so a
+    // few centimetres of drift puts the body centre inside a wall — and a body inside a block
+    // gets shoved a whole block upward by collision resolution, every tick, until it pops out
+    // on the roof. Steering alone can't hold a line that tight; this does.
+    var passageLaneX: Double? = null
+    var passageLaneZ: Double? = null
+
+    // What is ACTUALLY in force this tick: the pathfinder's intent above, merged with what the
+    // body can see around itself (see updateConfinement). The self-detected half is the
+    // important one — the pathfinder drops its waypoint the moment the line to the player
+    // clears, which inside a corridor is precisely when the body still needs holding.
+    private var activePinY: Double? = null
+    private var activeLaneX: Double? = null
+    private var activeLaneZ: Double? = null
+    private var activeHeadroom: Double? = null
+
+    /** Ceiling height above the floor while the body is in a tight space, else null. SpiderMob
+     *  reads this to cap the size — without it the spider swells back to its distance-based
+     *  size inside a corridor and shoves itself up through the roof. */
+    val confinedHeadroom: Double? get() = activeHeadroom
+
+    /** Ask the world whether the body is in a tight space right now, and merge that with
+     *  whatever the chase asked for. Runs every tick, in every AI mode. */
+    private fun updateConfinement() {
+        activePinY = passageFloorY
+        activeLaneX = passageLaneX
+        activeLaneZ = passageLaneZ
+
+        val confinement = SafeGroundFinder.confinementAt(
+            level, position.x, position.y, position.z, lerpedGait().bodyHeight)
+        if (activePinY == null) activePinY = confinement.floorY
+        if (activeLaneX == null) activeLaneX = confinement.laneX
+        if (activeLaneZ == null) activeLaneZ = confinement.laneZ
+        activeHeadroom = confinement.headroom
+    }
+
+    // Idle grooming state (see updateGrooming): 0 = not grooming, else ticks remaining.
+    private var stationaryTimer = 0
+    private var groomingTimer = 0
+    private val groomingOriginalPos0 = Vector3d()
+    private val groomingOriginalPos1 = Vector3d()
+
+    // Lunge state (the poison variant's tarantula strike, see updateLunge): 0 = idle, else ticks
+    // remaining across both phases (rear-up telegraph, then the forward strike burst).
+    private var lungeTimer = 0
+    private val lungeDirection = Vector3d()
+
+    // The spider's current absolute physical size (1.0 = as spawned). Driven by SpiderMob from the
+    // nearest player's distance (close = small, far = large). Scales the body plan + gait so the IK
+    // re-solves and the feet stay planted at any size — see [setSizeScale].
+    var sizeScale = 1.0; private set
+
+    fun lerpedGait(): LerpGait {
+        if (isRotatingYaw) return gait.moving.clone()
+        val speedFraction = velocity.length() / gait.maxSpeed
+        return gait.stationary.clone().lerp(gait.moving, speedFraction)
+    }
+
+    companion object {
+        fun fromSpawn(
+            level: ServerLevel,
+            position: Vector3d,
+            yaw: Float,
+            pitch: Float,
+            bodyPlan: BodyPlan,
+            gallopGait: Gait,
+            walkGait: Gait,
+        ): SpiderBody {
+            // yaw/pitch in degrees, mirroring Location.yawRadians()/pitchRadians()
+            val orientation = Quaternionf().rotationYXZ((-yaw).toRadians(), pitch.toRadians(), 0f)
+            return SpiderBody(level, position, orientation, bodyPlan, gallopGait = gallopGait, walkGait = walkGait)
+        }
+    }
+
+    fun forwardDirection() = FORWARD_VECTOR.rotate(Quaterniond(orientation))
+
+    // memo
+    var preferredPitch = orientation.getEulerAnglesYXZ(Vector3f()).x
+    var preferredRoll = orientation.getEulerAnglesYXZ(Vector3f()).z
+    var preferredOrientation = Quaternionf(orientation)
+
+    val velocity = Vector3d(0.0, 0.0, 0.0)
+    val rotationalVelocity = Vector3f(0f, 0f, 0f)
+
+    fun accelerateRotation(axis: Vector3d, angle: Float) {
+        val acceleration = Quaternionf().rotateAxis(angle, axis.toV3f())
+        val oldVelocity = Quaternionf().rotationYXZ(rotationalVelocity.y, rotationalVelocity.x, rotationalVelocity.z)
+        val rotVelocity = acceleration.mul(oldVelocity)
+        rotationalVelocity.set(rotVelocity.getEulerAnglesYXZ(Vector3f()))
+    }
+
+    fun teleport(newPosition: Vector3d) {
+        val diff = Vector3d(newPosition).sub(position)
+        position.set(newPosition)
+        for (leg in legs) leg.endEffector.add(diff)
+    }
+
+    /**
+     * Set the spider's absolute physical size (1.0 = as spawned). Scales the body plan (leg spread +
+     * segment lengths) and the gait (stance height + step/zone distances) so the IK legs re-target
+     * and the feet stay planted at any size. Movement speeds/accelerations are intentionally left
+     * unscaled. Negligible changes are a cheap no-op so we don't thrash the gait every tick.
+     */
+    fun setSizeScale(target: Double) {
+        val ratio = target / sizeScale
+        // Fine 0.1% deadband: scale must track the distance CONTINUOUSLY in micro-steps. A coarser
+        // deadband (tried 1%) makes the size change in discrete chunks every few ticks — each chunk
+        // pops the gait/legs/body forward slightly, which reads as periodic forward lurching.
+        if (ratio in 0.999..1.001) return
+
+        bodyPlan.scale(ratio)
+        walkGait.scaleSize(ratio)
+        gallopGait.scaleSize(ratio)
+
+        // Chains are only rebuilt on a segment-COUNT change, so push the freshly scaled segment
+        // lengths into the existing IK chains; otherwise the rendered segments desync from the
+        // solved joints (and the leg tip stops reaching the ground — the "floating legs" bug).
+        for (leg in legs) {
+            for ((i, segment) in leg.chain.segments.withIndex()) {
+                segment.length = leg.legPlan.segments.getOrNull(i)?.length ?: segment.length
+            }
+        }
+
+        // Posture-preserving rescale: the zones (trigger/comfort) just scaled around rest positions,
+        // but the FEET didn't move — without this, a rescale throws several legs outside their
+        // zones at once and they re-step in a synchronized wave (a visible forward lurch), and
+        // per-tick micro-rescaling keeps legs perpetually "uncomfortable", which gates the walk
+        // speed to zero (the stuck-spider bug). Scale each foot's HORIZONTAL offset from the body
+        // by the same ratio (leave y — feet stay planted), so feet and zones stay aligned.
+        for (leg in legs) {
+            leg.endEffector.x = position.x + (leg.endEffector.x - position.x) * ratio
+            leg.endEffector.z = position.z + (leg.endEffector.z - position.z) * ratio
+        }
+
+        sizeScale = target
+    }
+
+    // Absolute travel-speed multiplier (1.0 = the base ~4 blocks/sec). See [setSpeedScale].
+    var speedScale = 1.0; private set
+
+    /**
+     * Scale the body's *travel* speed (and matching acceleration) to an absolute factor, independent
+     * of the physical [setSizeScale]. Driven by SpiderMob so the spider rushes in fast from far away
+     * and eases back to the ~4 blocks/sec baseline as it closes in. Leg-swing speed already scales
+     * with size (and the spider is biggest exactly when it's fastest), so the legs keep pace.
+     */
+    fun setSpeedScale(target: Double) {
+        val ratio = target / speedScale
+        if (ratio in 0.999..1.001) return   // same fine deadband as setSizeScale
+        for (gait in listOf(walkGait, gallopGait)) {
+            gait.maxSpeed *= ratio
+            gait.moveAcceleration *= ratio
+        }
+        speedScale = target
+    }
+
+    private fun updatePreferredAngles() {
+        val currentEuler = orientation.getEulerAnglesYXZ(Vector3f())
+
+        if (gait.disableAdvancedRotation) {
+            preferredPitch = 0f
+            preferredRoll = 0f
+            preferredOrientation = Quaternionf().rotationYXZ(currentEuler.y, 0f, 0f)
+            return
+        }
+
+        fun getPos(leg: Leg): Vector3d = leg.groundPosition ?: leg.restPosition
+
+        val frontLeft = getPos(legs.getOrNull(0) ?: return)
+        val frontRight = getPos(legs.getOrNull(1) ?: return)
+        val backLeft = getPos(legs.getOrNull(legs.size - 2) ?: return)
+        val backRight = getPos(legs.getOrNull(legs.size - 1) ?: return)
+
+        val forwardLeft = frontLeft.copy().subtract(backLeft)
+        val forwardRight = frontRight.copy().subtract(backRight)
+        val forward = listOf(forwardLeft, forwardRight).average()
+
+        val sideways = Vector3d(0.0, 0.0, 0.0)
+        for (i in 0 until legs.size step 2) {
+            val left = legs.getOrNull(i) ?: continue
+            val right = legs.getOrNull(i + 1) ?: continue
+            sideways.add(getPos(right).copy().subtract(getPos(left)))
+        }
+
+        preferredPitch = forward.pitch().lerp(preferredPitch, gait.preferredRotationLerpFraction)
+        preferredRoll = sideways.pitch().lerp(preferredRoll, gait.preferredRotationLerpFraction)
+
+        if (preferredPitch < gait.preferLevelBreakpoint) preferredPitch *= 1 - gait.preferLevelBias
+        if (preferredRoll < gait.preferLevelBreakpoint) preferredRoll *= 1 - gait.preferLevelBias
+
+        preferredOrientation = Quaternionf().rotationYXZ(currentEuler.y, preferredPitch, preferredRoll)
+    }
+
+    fun init(ecs: Ecs, entity: EcsEntity) {
+        legs = bodyPlan.legs.map { Leg(ecs, entity, this, it) }
+    }
+
+    fun update(ecs: Ecs, entity: EcsEntity) {
+        if (legs.isEmpty()) {
+            init(ecs, entity)
+            if (legs.isEmpty()) return
+        }
+
+        updatePreferredAngles()
+        updateConfinement()   // must precede calcPreferredY and the collision step below
+
+        val groundedLegs = legs.filter { it.isGrounded() }
+        val fractionOfLegsGrounded = groundedLegs.size.toDouble() / legs.size
+
+        // gravity + air resistance
+        velocity.y -= gait.gravityAcceleration
+        velocity.y *= (1 - gait.airDragCoefficient)
+
+        // apply rotational velocity
+        val rotVelocity = Quaternionf().rotationYXZ(rotationalVelocity.y, rotationalVelocity.x, rotationalVelocity.z)
+        orientation.set(rotVelocity.mul(orientation))
+
+        // drag while leg on ground
+        if (!isWalking) {
+            val legDrag = 1 - gait.groundDragCoefficient * fractionOfLegsGrounded
+            velocity.x *= legDrag
+            velocity.z *= legDrag
+        }
+
+        // rotational drag
+        val rotDrag = 1 - gait.rotationalDragCoefficient * fractionOfLegsGrounded.toFloat()
+        rotationalVelocity.mul(rotDrag)
+
+        // drag while body on ground
+        if (onGround) {
+            val bodyDrag = .5f
+            velocity.x *= bodyDrag
+            velocity.z *= bodyDrag
+            rotationalVelocity.mul(bodyDrag)
+        }
+
+        val normal = calcNormal()
+        this.normal = normal
+
+        normalAcceleration = Vector3d(0.0, 0.0, 0.0)
+        if (normal != null) {
+            val preferredY = calcPreferredY()
+            val preferredYAcceleration = (preferredY - position.y - velocity.y).coerceAtLeast(0.0)
+            val capableAcceleration = gait.bodyHeightCorrectionAcceleration * fractionOfLegsGrounded
+            val accelerationMagnitude = min(preferredYAcceleration, capableAcceleration)
+
+            normalAcceleration = normal.normal.copy().multiply(accelerationMagnitude)
+            if (normalAcceleration.horizontalLength() > normalAcceleration.y) normalAcceleration.multiply(0.0)
+            velocity.add(normalAcceleration)
+        }
+
+        // Symmetric height correction: the normal force above only ever pushes UP, so a spider
+        // whose preferred height just DROPPED (i.e. it's shrinking) would otherwise be stranded in
+        // the air, descending on base gravity alone with its shortened legs dangling — shrinking
+        // "takes forever" and the stranded legs destabilise the gait. Actively pull the body down
+        // toward its preferred height, with a terminal-speed cap so it descends decisively but
+        // lands softly (the pull tapers to exactly the remaining gap near arrival).
+        run {
+            val preferredY = calcPreferredY()
+            val excess = position.y + velocity.y - preferredY
+            if (excess > 0.0) {
+                velocity.y -= min(excess, gait.bodyHeightCorrectionAcceleration)
+                if (velocity.y < -MAX_DESCENT_SPEED) velocity.y = -MAX_DESCENT_SPEED
+            }
+        }
+
+        // apply velocity
+        position.add(velocity)
+
+        // Hold the centre line of a passage being threaded, and kill the lateral velocity that
+        // is trying to push off it, so the body stays inside the tube for its whole length.
+        activeLaneX?.let { lane -> position.x += (lane - position.x) * 0.6; velocity.x *= 0.2 }
+        activeLaneZ?.let { lane -> position.z += (lane - position.z) * 0.6; velocity.z *= 0.2 }
+
+        // resolve collision
+        val heightPin = activePinY ?: squeezeTargetY
+        if (heightPin != null) {
+            // Threading a doorway, corridor or squeeze-hole: the ceiling is right above the
+            // body, and the collision resolve below casts from a block ABOVE it — a point
+            // that is *inside* that ceiling in any tight space, so it "hits" instantly and
+            // teleports the body a block upward every tick (the reported climb up the wall).
+            // The height pin already owns the body height in here; all that's left is to keep
+            // it off the floor.
+            val minY = heightPin + 0.05
+            if (position.y < minY) {
+                position.y = minY
+                if (velocity.y < 0) velocity.y = .0
+            }
+            onGround = true
+        } else {
+            val collision = level.resolveCollision(position, Vector3d(0.0, min(-1.0, -abs(velocity.y)), 0.0))
+            if (collision != null) {
+                onGround = true
+                val didHit = collision.offset.length() > (gait.gravityAcceleration * 2) * (1 - gait.airDragCoefficient)
+                if (didHit) ecs.emit(SpiderBodyHitGroundEvent(spider = this))
+
+                position.y = collision.position.y
+                if (velocity.y < 0) velocity.y *= -gait.bounceFactor
+                if (velocity.y < gait.gravityAcceleration) velocity.y = .0
+            } else {
+                onGround = level.isOnGround(position, DOWN_VECTOR.rotate(orientation))
+            }
+        }
+
+        val updateOrder = gait.type.getLegsInUpdateOrder(this)
+        for (leg in updateOrder) leg.updateMemo()
+        for (leg in updateOrder) leg.update()
+
+        // Idle grooming and the lunge both override the front legs' pose, so they must run
+        // AFTER the leg updates (they never overlap - each guards against the other).
+        updateGrooming()
+        updateLunge()
+
+        updatePreferredAngles()
+    }
+
+    // ---- The lunge (the poison variant's tarantula strike) -----------------------------------
+    // Real tarantulas rear up with their front legs raised, THEN strike. beginLunge starts the
+    // sequence: LUNGE_REAR_TICKS of telegraph (the front legs sweep up and forward while
+    // calcPreferredY lifts the body - the threat pose), then one hard velocity impulse hurls the
+    // body at the target for LUNGE_STRIKE_TICKS - the only window in which SpiderMob lets the
+    // poison bite land. Same trick as grooming: front legs isDisabled + endEffector steering;
+    // the renderer re-solves each leg chain from its end effector, so posing the tips is all it
+    // takes.
+
+    val isLunging get() = lungeTimer > 0
+
+    /** The forward-burst phase — the bite window. */
+    val isLungeStriking get() = lungeTimer in 1..LUNGE_STRIKE_TICKS
+
+    fun beginLunge(direction: Vector3d) {
+        if (lungeTimer > 0 || groomingTimer > 0) return
+        if (legs.size < 2) return
+        lungeDirection.set(direction.x, 0.0, direction.z)
+        if (lungeDirection.lengthSquared() < 1.0e-6) return
+        lungeDirection.normalize()
+        lungeTimer = LUNGE_REAR_TICKS + LUNGE_STRIKE_TICKS
+        legs[0].isDisabled = true
+        legs[1].isDisabled = true
+    }
+
+    /** End the sequence (bite landed, or it played out): give the front legs back to the gait,
+     *  which replants them with normal steps — no snap. */
+    fun endLunge() {
+        lungeTimer = 0
+        legs.getOrNull(0)?.isDisabled = false
+        legs.getOrNull(1)?.isDisabled = false
+    }
+
+    private fun updateLunge() {
+        if (lungeTimer <= 0) return
+        val leg0 = legs.getOrNull(0)
+        val leg1 = legs.getOrNull(1)
+        if (leg0 == null || leg1 == null) { endLunge(); return }
+
+        // Telegraph over -> one hard impulse toward the target, with a slight hop so the strike
+        // leaves the ground. Ground drag bleeds it off across the strike window.
+        if (lungeTimer == LUNGE_STRIKE_TICKS + 1) {
+            val burst = LUNGE_SPEED * sizeScale.coerceIn(0.6, 2.5)
+            velocity.add(Vector3d(lungeDirection).mul(burst))
+            velocity.y += 0.3 * burst
+        }
+
+        // The front legs are held up and forward of the body for the whole sequence — the
+        // threat pose — swept smoothly toward the raised target during the telegraph and riding
+        // along with the body through the strike. legs[0] = front-right, legs[1] = front-left.
+        val up = UP_VECTOR
+        val right = Vector3d(lungeDirection).cross(up, Vector3d()).normalize()
+        for (i in 0..1) {
+            val leg = if (i == 0) leg0 else leg1
+            val sideDir = if (i == 0) 1.0 else -1.0
+            val target = position.copy()
+                .add(Vector3d(lungeDirection).mul(0.9 * sizeScale))
+                .add(up.copy().mul(0.8 * sizeScale))
+                .add(right.copy().mul(0.35 * sideDir * sizeScale))
+            leg.endEffector.lerp(target, 0.35)
+        }
+
+        lungeTimer--
+        if (lungeTimer == 0) endLunge()
+    }
+
+    // ---- Idle grooming (contributed by NetherySiloX; completed & integrated here) ------------
+    // Only while wandering is DISABLED: once the spider has stood still for 3 seconds, a
+    // per-second chance (Config.GROOMING_CHANCE) starts a 5-second sequence — the front leg pair
+    // lifts to the mouth and "cleans" with a smooth sweeping rub (opposite phases per leg, eased
+    // in/out), while calcPreferredY leans the body down. The legs are flagged isDisabled so the
+    // gait leaves them alone, and the ease returns them to their stored ground positions before
+    // the flag is lifted — no snap at either end.
+    private fun updateGrooming() {
+        val speedSq = velocity.lengthSquared()
+
+        if (!Config.ENABLE_WANDERING.get()) {
+            if (speedSq < 0.001) {
+                stationaryTimer++
+                if (groomingTimer <= 0 && stationaryTimer > 60) {   // still for 3s before considering it
+                    val chancePerTick = Config.GROOMING_CHANCE.get() / 20.0
+                    if (chancePerTick > 0 && Random.nextDouble() < chancePerTick) beginGrooming()
+                }
+            } else {
+                stationaryTimer = 0
+                // Real movement interrupts grooming; tiny physics jitter (< 0.01 sq) does not.
+                if (speedSq > 0.01 && groomingTimer > 0) cancelGrooming()
+            }
+        } else {
+            stationaryTimer = 0
+            if (groomingTimer > 0) cancelGrooming()
+        }
+
+        if (groomingTimer <= 0) return
+        val leg0 = legs.getOrNull(0)
+        val leg1 = legs.getOrNull(1)
+        if (leg0 == null || leg1 == null) { cancelGrooming(); return }
+
+        val progress = 1.0 - groomingTimer / 100.0
+        val smoothT = groomingSmoothT()
+
+        val forward = FORWARD_VECTOR.rotate(Quaterniond(orientation))
+        val up = UP_VECTOR.rotate(Quaterniond(orientation))
+        val right = forward.cross(up, Vector3d()).normalize()
+
+        // The "mouth": just in front of and slightly below the body centre.
+        val mouthPos = position.copy()
+            .add(forward.copy().mul(0.5 * sizeScale))
+            .add(up.copy().mul(-0.05 * sizeScale))
+
+        // Rub only through the middle of the sequence (fades in after the lift, out before the return).
+        val rubIntensity = when {
+            progress < 0.2 || progress > 0.8 -> 0.0
+            progress < 0.3 -> (progress - 0.2) / 0.1
+            progress > 0.7 -> (0.8 - progress) / 0.1
+            else -> 1.0
+        }
+
+        for (i in 0..1) {
+            val leg = if (i == 0) leg0 else leg1
+            val originalPos = if (i == 0) groomingOriginalPos0 else groomingOriginalPos1
+            val sideDir = if (i == 0) 1.0 else -1.0   // legs[0] = front-right, legs[1] = front-left
+
+            val targetPos = mouthPos.copy().add(right.copy().mul(0.15 * sideDir * sizeScale))
+
+            if (rubIntensity > 0.0) {
+                // Smooth, deliberate sweeping motion: 3 full cycles, opposite phase per leg.
+                val rubPhase = progress * Math.PI * 6.0 + if (i == 0) 0.0 else Math.PI
+                targetPos.add(up.copy().mul(sin(rubPhase) * 0.08 * sizeScale * rubIntensity))
+                targetPos.add(forward.copy().mul(cos(rubPhase) * 0.04 * sizeScale * rubIntensity))
+            }
+
+            // Arc from the stored ground position up to the mouth; smoothT eases back to 0 at the
+            // end, so the same lerp carries the leg home. The renderer re-solves the leg chain
+            // from endEffector every pass, so steering the end effector is all that's needed.
+            val arcHeight = sin(smoothT * Math.PI) * 0.4 * sizeScale
+            leg.endEffector.set(originalPos.copy().lerp(targetPos, smoothT).add(up.copy().mul(arcHeight)))
+        }
+
+        groomingTimer--
+        if (groomingTimer == 0) cancelGrooming()
+    }
+
+    /** Smoothstep envelope for the grooming sequence: eases in over the first 20%, holds, eases out. */
+    private fun groomingSmoothT(): Double {
+        val progress = 1.0 - groomingTimer / 100.0
+        val lerpFactor = when {
+            progress < 0.2 -> progress / 0.2
+            progress > 0.8 -> (1.0 - progress) / 0.2
+            else -> 1.0
+        }
+        return lerpFactor * lerpFactor * (3 - 2 * lerpFactor)
+    }
+
+    private fun beginGrooming() {
+        val leg0 = legs.getOrNull(0) ?: return
+        val leg1 = legs.getOrNull(1) ?: return
+        if (leg0.isMoving || leg1.isMoving) return   // wait for a tick when both feet are planted
+        groomingTimer = 100   // 5 seconds
+        leg0.isDisabled = true
+        leg1.isDisabled = true
+        groomingOriginalPos0.set(leg0.endEffector)
+        groomingOriginalPos1.set(leg1.endEffector)
+    }
+
+    private fun cancelGrooming() {
+        legs.getOrNull(0)?.isDisabled = false
+        legs.getOrNull(1)?.isDisabled = false
+        groomingTimer = 0
+    }
+
+    private fun legsInPolygonalOrder(): List<Int> {
+        val lefts = legs.indices.filter { LegLookUp.isLeftLeg(it) }
+        val rights = legs.indices.filter { LegLookUp.isRightLeg(it) }
+        return lefts + rights.reversed()
+    }
+
+    private fun calcPreferredY(): Double {
+        val lookAhead = position.copy().add(velocity)
+        val ground = level.raycastGround(lookAhead, DOWN_VECTOR.rotate(preferredOrientation), lerpedGait().bodyHeight)
+        val groundY = ground?.y ?: -Double.MAX_VALUE
+
+        val averageY = legs.map { it.target.position.y }.average() + lerpedGait().bodyHeight
+
+        val pivot = gait.legChainPivotMode.get(this)
+        val target = UP_VECTOR.rotate(pivot).multiply(gait.maxBodyDistanceFromGround)
+        var targetY = max(averageY, groundY + target.y)
+
+        // ---- Idle breathing + grooming lean (contributed by NetherySiloX; only while wandering
+        // is DISABLED, and blended out as soon as the spider actually moves) -------------------
+        if (!Config.ENABLE_WANDERING.get()) {
+            val horizontalSpeed = sqrt(velocity.x * velocity.x + velocity.z * velocity.z)
+            val breathingFactor = (1.0 - horizontalSpeed / 0.05).coerceIn(0.0, 1.0)
+            if (breathingFactor > 0.0) {
+                // ~4.5 s per breath cycle; depth scales with the spider's size.
+                targetY += sin(level.gameTime * 0.07) * 0.08 * sizeScale * breathingFactor
+            }
+            // Lean the body down toward the front legs while grooming.
+            if (groomingTimer > 0) targetY -= groomingSmoothT() * 0.15 * sizeScale
+        }
+
+        // Rear up while a lunge telegraphs: the body lifts as the front legs rise — the
+        // tarantula threat pose right before the strike (see updateLunge).
+        if (lungeTimer > LUNGE_STRIKE_TICKS) targetY += 0.22 * sizeScale
+
+        // THE SQUEEZE descent: sink toward the squeeze target instead of hovering at rim height.
+        // The straight-down raycast finds the real floor beneath the body — the hole bottom once
+        // the body crosses the opening, or the surface while still stalking up to it (so the
+        // spider presses flat against the ground, then pours down the shaft the moment it is
+        // over the lip). Standing height above that floor is the scaled bodyHeight, which at
+        // squeeze size sets the body — and the bite — right on top of the hidden player. The
+        // upward normal force only acts when preferredY is ABOVE the body, so lowering targetY
+        // both releases the rim-leg hover and engages the downward height correction.
+        // Doorway/corridor: stand at the passage's own floor, never at whatever height the
+        // legs have wandered off to (the wall top, usually).
+        val passY = activePinY
+        if (passY != null) {
+            // Stand at normal height, or as close under the ceiling as this space allows —
+            // whichever is lower. The ceiling clamp matters while the spider is still shrinking
+            // on its way in: an oversized body would otherwise want a height ABOVE the roof,
+            // and the normal force would happily drive it there.
+            val room = activeHeadroom ?: Double.MAX_VALUE
+            val stand = min(lerpedGait().bodyHeight, (room - 0.3).coerceAtLeast(0.15))
+            val standY = passY + stand
+            if (standY < targetY) targetY = standY
+        }
+
+        val squeezeY = squeezeTargetY
+        if (squeezeY != null) {
+            val scanDistance = (position.y - squeezeY).coerceAtLeast(0.0) + 2.0
+            val floor = level.raycastGround(position, DOWN_VECTOR, scanDistance)
+            val standY = (floor?.y ?: squeezeY) + lerpedGait().bodyHeight
+            if (standY < targetY) targetY = standY
+        }
+
+        return position.y.lerp(targetY, gait.bodyHeightCorrectionFactor)
+    }
+
+    private fun applyStabilization(normal: NormalInfo) {
+        if (normal.origin == null) return
+        if (normal.centreOfMass == null) return
+
+        if (normal.origin.horizontalDistance(normal.centreOfMass) < gait.polygonLeeway) {
+            normal.origin.x = normal.centreOfMass.x
+            normal.origin.z = normal.centreOfMass.z
+        }
+
+        val stabilizationTarget = normal.origin.copy().setY(normal.centreOfMass.y)
+        normal.centreOfMass.lerp(stabilizationTarget, gait.stabilizationFactor)
+        normal.normal.set(normal.centreOfMass).sub(normal.origin).normalize()
+    }
+
+    private fun calcLegacyNormal(): NormalInfo? {
+        val pairs = LegLookUp.diagonalPairs(legs.indices.toList())
+        if (pairs.any { pair -> pair.mapNotNull { legs.getOrNull(it) }.all { it.isGrounded() } }) {
+            return NormalInfo(normal = Vector3d(0.0, 1.0, 0.0))
+        }
+        return null
+    }
+
+    private fun calcNormal(): NormalInfo? {
+        if (gait.useLegacyNormalForce) return calcLegacyNormal()
+
+        val centreOfMass = legs.map { it.endEffector }.average()
+        centreOfMass.lerp(position, 0.5)
+        centreOfMass.y += 0.01
+
+        val groundedLegs = legsInPolygonalOrder().map { legs[it] }.filter { it.isGrounded() }
+        if (groundedLegs.isEmpty()) return null
+
+        val legsPolygon = groundedLegs.map { it.endEffector.copy() }
+        val polygonCenterY = legsPolygon.map { it.y }.average()
+
+        if (legsPolygon.size == 1) {
+            val origin = groundedLegs.first().endEffector.copy()
+            return NormalInfo(
+                normal = centreOfMass.copy().subtract(origin).normalize(),
+                origin = origin,
+                centreOfMass = centreOfMass,
+                contactPolygon = legsPolygon,
+            ).apply { applyStabilization(this) }
+        }
+
+        val polygon2D = legsPolygon.map { Vector2d(it.x, it.z) }
+
+        if (pointInPolygon(Vector2d(centreOfMass.x, centreOfMass.z), polygon2D)) return NormalInfo(
+            normal = Vector3d(0.0, 1.0, 0.0),
+            origin = Vector3d(centreOfMass.x, polygonCenterY, centreOfMass.z),
+            centreOfMass = centreOfMass,
+            contactPolygon = legsPolygon,
+        )
+
+        val point = nearestPointInPolygon(Vector2d(centreOfMass.x, centreOfMass.z), polygon2D)
+        val origin = Vector3d(point.x, polygonCenterY, point.y)
+        return NormalInfo(
+            normal = centreOfMass.copy().subtract(origin).normalize(),
+            origin = origin,
+            centreOfMass = centreOfMass,
+            contactPolygon = legsPolygon,
+        ).apply { applyStabilization(this) }
+    }
+}
+
+class NormalInfo(
+    val normal: Vector3d,
+    val origin: Vector3d? = null,
+    val contactPolygon: List<Vector3d>? = null,
+    val centreOfMass: Vector3d? = null,
+)
+
+fun setupSpiderBody(ecs: Ecs) {
+    ecs.onTick {
+        for ((entity, spider) in ecs.query<EcsEntity, SpiderBody>()) {
+            spider.update(ecs, entity)
+        }
+    }
+}

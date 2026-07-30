@@ -1,0 +1,84 @@
+// ArachnoMod - Fabric 1.20.1 port of TheCymaera/minecraft-spider
+//
+// Build:  gradle build      -> JAR appears in build/libs/
+// Run:    gradle runClient  (singleplayer dev client)
+//
+// NOTE ON VERSIONS (Fabric toolchain for 1.20.1 -- differs from the 1.21.1 sibling):
+//   fabric-loom ................... 1.6-SNAPSHOT   (the line that targets MC 1.20.1)
+//   Minecraft ..................... 1.20.1
+//   Mappings ...................... official Mojang mappings (so the shared engine source,
+//                                    which uses official names, compiles UNCHANGED)
+//   fabric-loader ................. 0.16.10  (fabric-api 0.92.6 requires >=0.16.10)
+//   fabric-api .................... 0.92.6+1.20.1  (the 1.20.1 maintenance line)
+//   fabric-language-kotlin ........ 1.12.3+kotlin.2.0.21  (MC-version agnostic: it depends on
+//                                    fabricloader, not on minecraft)
+//   Kotlin Gradle plugin .......... 2.0.21  (MUST match the Kotlin that FLK bundles)
+//   JAVA 17, not 21 -- 1.20.1 runs on Java 17, exactly like the Forge 1.20.1 port.
+//
+// Config lib: night-config (com.electronwill), the same TOML library ModConfigSpec is built on,
+// bundled jar-in-jar via Loom `include`.
+
+plugins {
+    id 'fabric-loom' version '1.6-SNAPSHOT'
+    id 'org.jetbrains.kotlin.jvm' version '2.0.21'
+    id 'java'
+}
+
+group = 'com.heledron'
+version = '1.8.0'
+
+base {
+    archivesName = 'arachnomod_fabric_1.20.1'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+loom {
+    // Access widener: widens the private Display setters we drive from server code. NOTE the
+    // 1.20.1 file uses setInterpolationDuration/Delay -- those were renamed to
+    // setTransformationInterpolation* in 1.20.2+ (see src/main/resources/arachnomod.accesswidener).
+    accessWidenerPath = file('src/main/resources/arachnomod.accesswidener')
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.20.1'
+    // Official Mojang mappings -> the shared spider engine compiles with no name changes.
+    mappings loom.officialMojangMappings()
+
+    // NOTE: 0.16.10+, NOT the 0.16.9 the 1.21.1 sibling uses — fabric-api 0.92.6+1.20.1 declares
+    // `depends fabricloader >=0.16.10`, so 0.16.9 builds fine but refuses to LOAD at runtime.
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.6+1.20.1'
+    modImplementation 'net.fabricmc:fabric-language-kotlin:1.12.3+kotlin.2.0.21'
+
+    // night-config on the compile/runtime classpath AND bundled into the jar (jar-in-jar).
+    implementation 'com.electronwill.night-config:core:3.6.7'
+    implementation 'com.electronwill.night-config:toml:3.6.7'
+    include 'com.electronwill.night-config:core:3.6.7'
+    include 'com.electronwill.night-config:toml:3.6.7'
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version
+    }
+}

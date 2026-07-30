@@ -22,6 +22,7 @@ Kotlin engine sources.
 | [`fabric-1.21.1/`](fabric-1.21.1/) | Fabric | 1.21.1 | 21 | Fabric Loom, Mojang mappings |
 | [`neoforge-1.21.1/`](neoforge-1.21.1/) | NeoForge | 1.21.1 | 21 | ModDevGradle |
 | [`forge-1.20.1/`](forge-1.20.1/) | Forge (loads on NeoForge 1.20.1 too) | 1.20.1 | 17 | ForgeGradle 6, official mappings |
+| [`fabric-1.20.1/`](fabric-1.20.1/) | Fabric | 1.20.1 | 17 | Fabric Loom, Mojang mappings |
 
 ## Building
 
@@ -33,6 +34,7 @@ Each project builds independently with Gradle (no wrapper script is committed; u
 gradle -p fabric-1.21.1   build   # requires JDK 21
 gradle -p neoforge-1.21.1 build   # requires JDK 21
 gradle -p forge-1.20.1    build   # requires JDK 17
+gradle -p fabric-1.20.1   build   # requires JDK 17
 ```
 
 Jars land in each project's `build/libs/`. `runClient` in any project starts a dev client.
