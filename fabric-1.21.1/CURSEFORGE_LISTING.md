@@ -82,7 +82,7 @@ All under `/spider`:
 | <code>/spider release</code> |Dismisses your personal spider.                                                                               |Anyone                   |
 | <code>/spider chasedistance &lt;blocks&gt;</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
 | <code>/spider config &lt;key&gt; get</code> |Shows any config value in chat.                                                                               |Ops (permission level 2) |
-| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 56 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 58 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
 
 ***
 
@@ -158,7 +158,9 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>camoMaxHealth</code> |600.0   |Max health of the camo variant (no armor) |
 | <code>poisonMaxHealth</code> |500.0   |Max health of the poison variant (no armor — its danger is the bite) |
 | <code>hunterMaxHealth</code> |400.0   |Max health of the hunter variant (no armor — it was never supposed to be seen) |
-| <code>attackDamageHearts</code> |6.0     |Melee damage in hearts per hit            |
+| <code>netheriteAttackDamageHearts</code> |6.0     |The netherite variant's bite, in hearts <em>before</em> your armour |
+| <code>camoAttackDamageHearts</code> |5.0     |The camo variant's bite, in hearts before armour |
+| <code>hunterAttackDamageHearts</code> |4.0     |The hunter variant's bite, in hearts before armour |
 | <code>poisonAttackDamageHearts</code> |3.0     |The poison variant's bite damage in hearts (every bite also injects Poison II) |
 | <code>poisonEffectSeconds</code> |30.0    |How long the Poison II from the poison variant's bite lasts |
 | <code>attackCooldownTicks</code> |20      |Ticks between melee hits (20 = 1/sec)     |
@@ -207,7 +209,11 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.7.0 (latest) — all three loaders
+### v1.8.0 (latest) — all three loaders
+- **Every variant now bites differently.** ⚔️ The one shared damage number is gone — each spider hits with its own weight: **Netherite 6 hearts**, **Camo 5**, **Hunter 4** (it hunts by taking your sight, not by force), **Poison 3** plus its venom, and the **Enraged boss 10**. New keys `netheriteAttackDamageHearts` / `camoAttackDamageHearts` / `hunterAttackDamageHearts` (a customized `attackDamageHearts` carries over automatically).
+- **On armour:** those are *raw* numbers — **your armour has always reduced them**, because the bite is an ordinary mob attack running vanilla's armour maths. For reference, what actually reaches you: the netherite bite lands **6 hearts unarmoured → ~3.8 in iron → ~1.9 in diamond → ~1.8 in netherite**; the poison bite lands **3 → ~0.75 through full netherite**; even the Enraged boss drops from 10 to ~3.6. Full kit is genuinely worth wearing, and the numbers above were left un-nerfed *because* armour already does that work — pre-reducing them would have made armoured players nearly immune. 🛡️
+
+### v1.7.0 — all three loaders
 - **NEW: the HUNTER takes your eyes.** 🖤 The pitch-black stalker now **blinds you** when it gets close — within **16 blocks** by default (`hunterBlindnessRange`) — for **30 seconds** (`hunterBlindnessSeconds`). And it **keeps re-applying it** for as long as you stay in range: the blindness doesn't tick down while it's near you, so the only way to clear it is to genuinely get away from the thing. Everyone in range is blinded, not just its current quarry — standing next to the victim is not a safe seat. A creature that only moves when you aren't looking, in a world where you can't look. Set the range to 0 to turn it off. ☠️
 
 ### v1.6.4 — all three loaders

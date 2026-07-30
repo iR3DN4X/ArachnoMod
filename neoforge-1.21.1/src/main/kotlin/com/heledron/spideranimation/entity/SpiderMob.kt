@@ -451,15 +451,13 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
                     attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()   // recovery starts at the leap
                 }
                 if (body.isLungeStriking && distSqr <= reach * reach) {
-                    nearest.hurt(damageSources().mobAttack(this), (Config.POISON_ATTACK_DAMAGE_HEARTS.get() * 2.0).toFloat())
+                    nearest.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
                     nearest.addEffect(MobEffectInstance(MobEffects.POISON,
                         (Config.POISON_EFFECT_SECONDS.get() * 20.0).toInt(), 1), this)
                     body.endLunge()   // bite landed — end the strike, so one lunge = one bite
                 }
             } else if (attackCooldown == 0 && distSqr <= reach * reach) {
-                val hearts = if (enraged) Config.ENRAGED_ATTACK_DAMAGE_HEARTS.get()
-                    else Config.ATTACK_DAMAGE_HEARTS.get()
-                nearest.hurt(damageSources().mobAttack(this), (hearts * 2.0).toFloat())
+                nearest.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
                 attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()
             }
         }
@@ -490,6 +488,24 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             }
         }
         entity.replaceComponent<SpiderBehaviour>(StayStillBehaviour())
+    }
+
+    /**
+     * Raw bite damage in hearts for this spider — each variant hits differently: the armoured
+     * netherite hardest, the mossy camo a little less, the hunter softest of all (it hunts by
+     * taking your sight, not by force), and the enraged boss hardest of anything.
+     *
+     * These are PRE-ARMOUR numbers on purpose. The bite is an ordinary mob attack, so vanilla
+     * armour reduction already applies on top — a player in full diamond takes roughly a
+     * quarter of the number below. Scaling these down for armour ourselves would reduce it
+     * twice over and make an armoured player practically immune.
+     */
+    private fun biteHearts(): Double = when {
+        enraged -> Config.ENRAGED_ATTACK_DAMAGE_HEARTS.get()
+        variant == SpiderVariant.POISON -> Config.POISON_ATTACK_DAMAGE_HEARTS.get()
+        variant == SpiderVariant.CAMO -> Config.CAMO_ATTACK_DAMAGE_HEARTS.get()
+        variant == SpiderVariant.HUNTER -> Config.HUNTER_ATTACK_DAMAGE_HEARTS.get()
+        else -> Config.NETHERITE_ATTACK_DAMAGE_HEARTS.get()
     }
 
     private fun distanceToScale(distance: Double): Double {

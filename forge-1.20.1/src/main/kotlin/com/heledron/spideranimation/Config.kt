@@ -77,7 +77,7 @@ object Config {
     // search — "the spider never shows up". Runs on the RAW file BEFORE the spec loads it
     // (call migrateConfigFile from the mod constructor, before registerConfig). Each migration
     // upgrades a value ONLY if it still equals its OLD default — customization is never touched.
-    private const val CONFIG_VERSION = 4
+    private const val CONFIG_VERSION = 5
     // Grouped by the config version that INTRODUCED each batch: a file older than that
     // version gets the batch applied (each value still only if it sits at its old default).
     private val MIGRATIONS: Map<Int, List<Triple<String, Any, Any>>> = mapOf(
@@ -124,6 +124,18 @@ object Config {
                     it.set<Any?>("camoMaxHealth", old)
                 }
                 it.remove<Any?>("maxHealth")
+            }
+            // v5 (mod v1.8.0): attackDamageHearts split per-variant (netherite 6 / camo 5 /
+            // hunter 4). A CUSTOMIZED old value carries into all three; the old 6.0 default is
+            // dropped so the new per-variant defaults apply.
+            if (fileVersion < 5) {
+                val old = (it.get<Any?>("attackDamageHearts") as? Number)?.toDouble()
+                if (old != null && old != 6.0) {
+                    it.set<Any?>("netheriteAttackDamageHearts", old)
+                    it.set<Any?>("camoAttackDamageHearts", old)
+                    it.set<Any?>("hunterAttackDamageHearts", old)
+                }
+                it.remove<Any?>("attackDamageHearts")
             }
             it.set<Any?>("configVersion", CONFIG_VERSION)
             it.save()
@@ -272,8 +284,16 @@ object Config {
         "actually get away from it. Set to 0 to disable the blindness entirely.")
     val HUNTER_BLINDNESS_SECONDS = define("hunterBlindnessSeconds", 30.0, 1.0, 3600.0,
         "How long (seconds) the HUNTER's blindness lasts once you are out of its range.")
-    val ATTACK_DAMAGE_HEARTS = define("attackDamageHearts", 6.0, 0.0, 100.0,
-        "Melee damage in HEARTS per hit.")
+    // Bite damage is per-variant. NOTE: these are RAW hearts before armour. Vanilla armour
+    // reduction applies on top automatically (the bite is an ordinary mob attack), so a player
+    // in full diamond takes roughly a quarter of these numbers - do not pre-reduce them here.
+    val NETHERITE_ATTACK_DAMAGE_HEARTS = define("netheriteAttackDamageHearts", 6.0, 0.0, 100.0,
+        "The NETHERITE variant's bite damage in HEARTS, before the victim's armour.")
+    val CAMO_ATTACK_DAMAGE_HEARTS = define("camoAttackDamageHearts", 5.0, 0.0, 100.0,
+        "The CAMO variant's bite damage in HEARTS, before the victim's armour.")
+    val HUNTER_ATTACK_DAMAGE_HEARTS = define("hunterAttackDamageHearts", 4.0, 0.0, 100.0,
+        "The HUNTER variant's bite damage in HEARTS, before the victim's armour. It hits",
+        "softest of all - it hunts by taking your sight and your nerve, not by brute force.")
     val POISON_ATTACK_DAMAGE_HEARTS = define("poisonAttackDamageHearts", 3.0, 0.0, 100.0,
         "The POISON variant's bite damage in HEARTS - weaker than the other variants, but",
         "every bite that lands also injects Poison II (see poisonEffectSeconds).")
