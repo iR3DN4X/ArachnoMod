@@ -8,7 +8,8 @@ import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundSource
 import net.minecraft.world.entity.Display
 import net.minecraft.world.entity.EntityType
-import net.minecraft.world.level.ClipContext
+import net.minecraft.world.level.BlockGetter
+import net.minecraft.world.phys.BlockHitResult
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.phys.AABB
 import net.minecraft.world.phys.HitResult
@@ -23,17 +24,33 @@ import kotlin.math.floor
 
 // ---- World queries -------------------------------------------------------------------------
 
+/**
+ * Clip a ray against block COLLISION shapes, ignoring fluids. Null when nothing is hit.
+ *
+ * Written out by hand rather than going through ClipContext, and it has to be. **On 1.20.1
+ * ClipContext's only constructor takes an Entity and hands it straight to
+ * CollisionContext.of(entity), which dereferences it immediately** — so passing null threw an NPE
+ * inside EntityCollisionContext as soon as a leg looked for the ground. Forge patches that path to
+ * tolerate null, so THIS build never showed the crash — and the Fabric 1.20.1 port inherited the
+ * assumption and died on it every time a spider spawned. Not leaving something this load-bearing
+ * resting on a loader patch.
+ *
+ * The two-argument getCollisionShape(level, pos) needs no context, and traverseBlocks walks the
+ * same voxel sequence vanilla's own clip does, so the behaviour is unchanged.
+ */
+private fun ServerLevel.clipCollider(from: Vec3, to: Vec3): BlockHitResult? =
+    BlockGetter.traverseBlocks(from, to, Unit, { _, pos ->
+        val state = getBlockState(pos)
+        if (state.isAir) null else state.getCollisionShape(this, pos).clip(from, to, pos)
+    }, { null })
+
 /** Ray-cast against block collision shapes (fluids ignored), returning the hit point or null. */
 fun ServerLevel.raycastGround(start: Vector3d, direction: Vector3d, maxDistance: Double): Vector3d? {
     if (direction.lengthSquared() == 0.0) return null
     val dir = Vector3d(direction).normalize().mul(maxDistance)
     val from = Vec3(start.x, start.y, start.z)
     val to = Vec3(start.x + dir.x, start.y + dir.y, start.z + dir.z)
-    val result = this.clip(
-        // 1.20.1's ClipContext takes a (nullable) Entity as its last arg, not a CollisionContext;
-        // a null entity yields CollisionContext.empty() internally, matching the original intent.
-        ClipContext(from, to, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, null)
-    )
+    val result = clipCollider(from, to) ?: return null
     if (result.type == HitResult.Type.MISS) return null
     val loc = result.location
     return Vector3d(loc.x, loc.y, loc.z)
@@ -49,11 +66,7 @@ fun ServerLevel.resolveCollision(position: Vector3d, direction: Vector3d): Colli
     val start = position.copy().sub(direction)
     val from = Vec3(start.x, start.y, start.z)
     val to = Vec3(position.x, position.y, position.z)
-    val result = this.clip(
-        // 1.20.1's ClipContext takes a (nullable) Entity as its last arg, not a CollisionContext;
-        // a null entity yields CollisionContext.empty() internally, matching the original intent.
-        ClipContext(from, to, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, null)
-    )
+    val result = clipCollider(from, to) ?: return null
     if (result.type == HitResult.Type.MISS) return null
     val hit = Vector3d(result.location.x, result.location.y, result.location.z)
     return CollisionResult(hit, Vector3d(hit).sub(position))

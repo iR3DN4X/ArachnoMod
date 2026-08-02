@@ -409,7 +409,7 @@ object SpiderAI {
         // prey is somewhere too low for the spider as it currently is, that line is a lie:
         // hunt for the way in and thread it instead.
         val playerRoom = SafeGroundFinder.confinementAt(
-            level, player.x, player.y + 0.5, player.z, bodyHeight).headroom
+            level, player.x, player.y, player.z, bodyHeight).headroom
         val tooBigForPlayersSpot = playerRoom != null && playerRoom < bodyHeight + 0.5
 
         if (direct.walkable && !tooBigForPlayersSpot) {

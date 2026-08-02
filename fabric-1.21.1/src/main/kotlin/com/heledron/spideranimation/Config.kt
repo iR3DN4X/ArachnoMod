@@ -281,11 +281,41 @@ object Config {
     val NETHERITE_MAX_HEALTH = DoubleValue("netheriteMaxHealth", 350.0, 1.0, 1000000.0,
         comment("Max health of the NETHERITE variant (default 350). It also wears the stats of a full",
                 "netherite armor suit, so it soaks far more weapon damage than the raw number suggests."))
+    val NETHERITE_ARMOR = DoubleValue("netheriteArmor", 20.0, 0.0, 30.0,
+        comment("The NETHERITE variant's armor points (default 20 = a full netherite suit; vanilla",
+                "caps player armor at 20 too). SET TO 0 FOR NO ARMOR - it then takes weapon damage",
+                "straight off its health pool, which makes it far quicker to kill. Armor only",
+                "reduces damage coming IN; it has no effect on the spider's own bite (that is",
+                "netheriteAttackDamageHearts). Applied when a spider SPAWNS - the change shows up",
+                "on the next one, not the one already walking around."))
+    val NETHERITE_ARMOR_TOUGHNESS = DoubleValue("netheriteArmorToughness", 12.0, 0.0, 20.0,
+        comment("The NETHERITE variant's armor toughness (default 12 = a full netherite suit).",
+                "Toughness is what stops heavy hits punching straight through armor. Set this and",
+                "netheriteArmor to 0 to fight a bare 350 HP spider."))
+    val NETHERITE_KNOCKBACK_RESISTANCE = DoubleValue("netheriteKnockbackResistance", 0.4, 0.0, 1.0,
+        comment("The NETHERITE variant's knockback resistance, 0-1 (default 0.4 - a netherite suit",
+                "is 0.1 per piece). Mostly cosmetic while the simulation owns the body's position,",
+                "but it keeps the suit honest."))
+    val NETHERITE_LEGS = IntValue("netheriteLegs", 8, 1, 16,
+        comment("How many legs the NETHERITE spider has (default 8 - the classic octopod). The",
+                "original mod shipped 2/4/6/8-legged bodies; any count from 1 to 16 works here and",
+                "the body shape is interpolated to match, so 12 or 16 reads as a centipede and 4",
+                "as a crab. ONLY the netherite variant - camo, poison and hunter are always 8.",
+                "BELOW 4 IS EXPERIMENTAL: the walk is a diagonal gait built out of opposing pairs,",
+                "so 3 limps, and 1-2 cannot really walk at all - the body just drags itself along",
+                "on whatever it can plant. Odd counts add one extra leg on the centre line.",
+                "Applied when a spider SPAWNS, so it takes effect on the next one."))
     val CAMO_MAX_HEALTH = DoubleValue("camoMaxHealth", 600.0, 1.0, 1000000.0,
         comment("Max health of the CAMO variant (default 600). No armor - easier to put down, if you",
                 "can find it."))
     val POISON_MAX_HEALTH = DoubleValue("poisonMaxHealth", 500.0, 1.0, 1000000.0,
         comment("Max health of the POISON variant (default 500). No armor - its danger is the bite."))
+    val POISON_SIZE = DoubleValue("poisonSize", 1.0, 0.3, 5.0,
+        comment("The POISON variant's FIXED size - it never grows or shrinks with distance (default",
+                "1.0: roughly player height, about 2 blocks tall). A tarantula is an ambusher, not a",
+                "siege engine - it stays low and the same size however far away you are. This also",
+                "keeps it from bobbing up and down as the distance-based sizing chases you. It can",
+                "still size down situationally to thread a doorway or drop into a squeeze hole."))
     val HUNTER_MAX_HEALTH = DoubleValue("hunterMaxHealth", 400.0, 1.0, 1000000.0,
         comment("Max health of the HUNTER variant (default 400). No armor - it was never supposed to",
                 "be seen at all."))

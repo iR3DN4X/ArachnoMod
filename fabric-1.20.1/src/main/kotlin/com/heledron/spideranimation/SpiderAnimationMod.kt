@@ -278,7 +278,10 @@ object AppState {
 
         val level = player.level() as ServerLevel
         val spawn = Vector3d(player.x, player.y + 1.0, player.z)
-        val (entity, body) = spawnBody(level, spawn, player.yRot, defaultSpider())
+        // netheriteSpider(), not defaultSpider(): the personal spider IS the netherite one, so it
+        // must honour netheriteLegs - otherwise the easiest way to summon one is also the one
+        // way you can never see your own leg-count setting.
+        val (entity, body) = spawnBody(level, spawn, player.yRot, netheriteSpider())
         body.manualControl = true   // follows its OWNER, not the nearest player
         body.setSizeScale(size)
         body.setSpeedScale(SpiderMob.scaleToSpeedFactor(size).coerceAtLeast(2.0))   // keeps up with sprinting

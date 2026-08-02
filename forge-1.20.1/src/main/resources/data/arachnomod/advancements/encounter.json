@@ -1,0 +1,16 @@
+{
+  "display": {
+    "icon": { "item": "minecraft:netherite_block" },
+    "title": "Along Came a Spider",
+    "description": "Meet the Netherite Octoarachnopod. It met you first, and as Coinmonke once put it, \"ITS SO BIG!!!\"",
+    "frame": "task",
+    "background": "minecraft:textures/block/netherite_block.png",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "impossible": { "trigger": "minecraft:impossible" }
+  },
+  "requirements": [ [ "impossible" ] ]
+}

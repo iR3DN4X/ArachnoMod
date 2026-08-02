@@ -186,7 +186,10 @@ object GallopGaitType {
         val onGround = spider.legs.any { it.isGrounded() } || spider.onGround
         if (!onGround) return false
 
-        val pair = spider.legs[LegLookUp.horizontal(index)]
+        // An ODD leg count leaves one leg with no mirror partner, and horizontal() then points
+        // past the end of the list - a hard crash. Such a leg is its own partner: it waits for
+        // nobody. (Every other lookup here already goes through unIndexLeg, which is safe.)
+        val pair = spider.legs.getOrNull(LegLookUp.horizontal(index)) ?: leg
         leg.isPrimary = LegLookUp.isDiagonal1(index) || pair.isDisabled || !pair.target.isGrounded
 
         return if (leg.isPrimary) {

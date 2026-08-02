@@ -1,0 +1,16 @@
+{
+  "parent": "arachnomod:encounter",
+  "display": {
+    "icon": { "item": "minecraft:netherite_ingot" },
+    "title": "I Have a Bad Feeling About This",
+    "description": "Feed a netherite ingot to the spider that is made of netherite. What is the worst that could happen?",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "impossible": { "trigger": "minecraft:impossible" }
+  },
+  "requirements": [ [ "impossible" ] ]
+}

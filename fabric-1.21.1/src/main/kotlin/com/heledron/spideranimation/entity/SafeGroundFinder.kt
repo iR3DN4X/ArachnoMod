@@ -240,19 +240,36 @@ object SafeGroundFinder {
 
     private val NOT_CONFINED = Confinement(null, null, null)
 
-    fun confinementAt(level: ServerLevel, x: Double, y: Double, z: Double, bodyHeight: Double): Confinement {
+    /**
+     * [groundY] is the body's GROUND PLANE — the level its legs stand on (`position.y -
+     * bodyHeight`), not its centre. That distinction is the whole fix for the oversized-body
+     * deadlock; see the floor hunt below.
+     */
+    fun confinementAt(level: ServerLevel, x: Double, groundY: Double, z: Double, bodyHeight: Double): Confinement {
         val bx = floor(x).toInt()
         val bz = floor(z).toInt()
-        val startY = floor(y).toInt()
 
-        // The floor beneath the body (a short look — this is about tight spaces, not cliffs).
+        // THE DEADLOCK THIS FIXES. The floor hunt used to start at the body's CENTRE and scan
+        // down. A body too big for the passage carries its centre at or above the passage
+        // CEILING, so that scan hit the ceiling first and recorded it as the floor — the reading
+        // came back "not confined", no headroom was reported, SpiderMob never capped the size,
+        // and the body therefore stayed too big to ever be detected. Too big to see the corridor,
+        // and never told to shrink because it couldn't see it: the spider parks outside forever.
+        // Chase size is distance-based, so a spider that comes at you from range arrives LARGE —
+        // exactly the case the detector was blind to. Anchoring at the ground plane instead makes
+        // the reading independent of how big the body currently is.
+        val startY = floor(groundY + 0.5).toInt()
+
         var floorTop = Double.NaN
         for (dy in 0 downTo -4) {
             if (isBodyBlocking(level, bx, startY + dy, bz)) { floorTop = (startY + dy + 1).toDouble(); break }
         }
         if (floorTop.isNaN()) return NOT_CONFINED
-        val above = y - floorTop
-        if (above > 2.5 || above < -0.5) return NOT_CONFINED   // striding over it, not inside it
+        // Are the legs actually standing on THIS floor? Size-independent, unlike the old test,
+        // which measured the body CENTRE against a fixed 2.5-block tolerance and so was failed by
+        // any spider taller than that simply for being tall.
+        val offGround = groundY - floorTop
+        if (offGround > 1.5 || offGround < -1.5) return NOT_CONFINED
 
         // Walls on both sides of one axis = a corridor, and its centre line is this column.
         val feetY = floorTop.toInt()
@@ -268,6 +285,14 @@ object SafeGroundFinder {
         }
         // A ceiling at all means the size has to be capped; a LOW one also pins the height.
         val roofed = headroom != Double.MAX_VALUE
+
+        // Now that big bodies are visible to this scan at all, they must not be lane-locked by
+        // scenery they simply STRIDE OVER. A tall spider crossing a one-block ditch, or stepping
+        // between two low blocks, has walls beside its FEET and nothing beside its body — pinning
+        // it to a centre line there would be a brand new way to get stuck. So an unroofed pinch
+        // only counts as confining if its walls actually rise into the body.
+        if (!roofed && sideWallHeight(level, bx, bz, feetY, walledX) < bodyHeight * 0.6) return NOT_CONFINED
+
         val pinFloor = if (headroom < bodyHeight + 1.5) floorTop else null
 
         return Confinement(
@@ -276,6 +301,20 @@ object SafeGroundFinder {
             laneZ = if (walledZ && !walledX) bz + 0.5 else null,
             headroom = if (roofed) headroom else null,
         )
+    }
+
+    /** How far the confining side walls rise above the passage floor, in blocks (capped at 7). */
+    private fun sideWallHeight(level: ServerLevel, bx: Int, bz: Int, feetY: Int, walledX: Boolean): Double {
+        var height = 0
+        for (dy in 0..6) {
+            val both = if (walledX)
+                isBodyBlocking(level, bx + 1, feetY + dy, bz) && isBodyBlocking(level, bx - 1, feetY + dy, bz)
+            else
+                isBodyBlocking(level, bx, feetY + dy, bz + 1) && isBodyBlocking(level, bx, feetY + dy, bz - 1)
+            if (!both) break
+            height = dy + 1
+        }
+        return height.toDouble()
     }
 
     /** Would this block stop the spider's body? (Collision-shaped; a doorway's own door does

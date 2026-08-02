@@ -4,6 +4,8 @@ import com.heledron.spideranimation.AppState
 import com.heledron.spideranimation.Config
 import com.heledron.spideranimation.SpiderAnimationMod
 import com.heledron.spideranimation.ecs.EcsEntity
+import com.heledron.spideranimation.platform.Advancements
+import com.heledron.spideranimation.platform.grantAdvancement
 import com.heledron.spideranimation.platform.playSoundAt
 import com.heledron.spideranimation.spider.DirectionBehaviour
 import com.heledron.spideranimation.spider.SpiderBehaviour
@@ -12,6 +14,7 @@ import com.heledron.spideranimation.spider.StayStillBehaviour
 import com.heledron.spideranimation.spider.camoSpider
 import com.heledron.spideranimation.spider.defaultSpider
 import com.heledron.spideranimation.spider.hunterSpider
+import com.heledron.spideranimation.spider.netheriteSpider
 import com.heledron.spideranimation.spider.poisonSpider
 import net.minecraft.core.particles.DustParticleOptions
 import net.minecraft.core.particles.ParticleTypes
@@ -107,6 +110,9 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // How often the hunter tops up its blindness while you stay in range. Well under the
         // effect's own duration, so it never lapses until you actually escape.
         const val BLINDNESS_REFRESH_TICKS = 40
+        // How close counts as having MET the spider, and how often that check runs.
+        const val ENCOUNTER_RANGE = 24.0
+        const val ENCOUNTER_CHECK_TICKS = 20
 
         // Registration-time defaults; the real max health from the config is applied per-instance
         // in ensureBody (attributes are built before configs are guaranteed loaded).
@@ -192,6 +198,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             if (level is ServerLevel && !enraged) {
                 enrage(level)
                 if (!player.abilities.instabuild) stack.shrink(1)
+                (player as? ServerPlayer)?.grantAdvancement(Advancements.ENRAGE)
             }
             return InteractionResult.sidedSuccess(level.isClientSide)
         }
@@ -245,7 +252,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             SpiderVariant.CAMO -> camoSpider()
             SpiderVariant.POISON -> poisonSpider()
             SpiderVariant.HUNTER -> hunterSpider()
-            else -> defaultSpider()
+            else -> netheriteSpider()
         }
         val bodyHeight = options.walkGait.stationary.bodyHeight
         val spawn = Vector3d(x, y + bodyHeight, z)
@@ -274,12 +281,33 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // (0.1x4). The camo variant is bare moss: health alone. (Knockback resistance is moot
         // while the simulation pins the position, but it keeps the suit honest.)
         if (variant == SpiderVariant.NETHERITE) {
-            getAttribute(Attributes.ARMOR)?.baseValue = 20.0
-            getAttribute(Attributes.ARMOR_TOUGHNESS)?.baseValue = 12.0
-            getAttribute(Attributes.KNOCKBACK_RESISTANCE)?.baseValue = 0.4
+            // All three are config-backed: set netheriteArmor (and toughness) to 0 for a spider
+            // with NO armor at all, which fights as a bare health pool. Read at spawn, like the
+            // max-health above - attributes are per-instance and the variants share an EntityType.
+            getAttribute(Attributes.ARMOR)?.baseValue = Config.NETHERITE_ARMOR.get()
+            getAttribute(Attributes.ARMOR_TOUGHNESS)?.baseValue = Config.NETHERITE_ARMOR_TOUGHNESS.get()
+            getAttribute(Attributes.KNOCKBACK_RESISTANCE)?.baseValue = Config.NETHERITE_KNOCKBACK_RESISTANCE.get()
         }
 
         return newBody
+    }
+
+    /**
+     * Everyone within [ENCOUNTER_RANGE] has met this spider: the shared "Along Came a Spider",
+     * plus the variant's own. NETHERITE has no separate one - it IS the root advancement.
+     */
+    private fun grantEncounterAdvancements(level: ServerLevel, body: SpiderBody) {
+        val rangeSq = ENCOUNTER_RANGE * ENCOUNTER_RANGE
+        for (player in level.players()) {
+            if (player.distanceToSqr(body.position.x, body.position.y, body.position.z) > rangeSq) continue
+            player.grantAdvancement(Advancements.ENCOUNTER)
+            when (variant) {
+                SpiderVariant.CAMO -> player.grantAdvancement(Advancements.ENCOUNTER_CAMO)
+                SpiderVariant.POISON -> player.grantAdvancement(Advancements.ENCOUNTER_POISON)
+                SpiderVariant.HUNTER -> player.grantAdvancement(Advancements.ENCOUNTER_HUNTER)
+                SpiderVariant.NETHERITE -> {}
+            }
+        }
     }
 
     override fun tick() {
@@ -354,6 +382,10 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
         }
 
+        // ADVANCEMENTS: meeting it. Everyone close enough to be in real danger has met it, not
+        // just whoever it happens to be hunting. Cheap to repeat - award() is a no-op once held.
+        if (tickCount % ENCOUNTER_CHECK_TICKS == 0) grantEncounterAdvancements(level, body)
+
         // Distance-based grow/shrink — physical, so the IK feet stay planted at every size. Size
         // reacts to distance regardless of AI mode: a wandering spider far away is still huge.
         // THE SQUEEZE overrides it: pressing over a dug-in player, the spider shrinks below
@@ -381,6 +413,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             // deep water is its one weakness, since it will not grow above the surface).
             variant == SpiderVariant.HUNTER -> Config.HUNTER_SIZE.get()
             squeezing -> Config.SQUEEZE_SIZE.get()
+            // THE POISON variant holds ONE size too. Distance-based sizing made it swell and
+            // shrink as the player moved around, and because body height scales with size that
+            // showed up in-game as the spider BOBBING UP AND DOWN on the spot - worst near
+            // water, where growInWater and the distance scale fight over maxOf(). A tarantula
+            // is an ambusher, not a siege engine: it stays player-sized whatever the range.
+            // Placed AFTER the squeeze so it can still pour itself down a hole, and the
+            // situational caps below still apply, so it can still thread a doorway or a
+            // crawl-hole - it simply has no distance-driven size of its own to oscillate.
+            variant == SpiderVariant.POISON -> Config.POISON_SIZE.get()
             else -> maxOf(distanceToScale(horizontalDistance), waterScale ?: 0.0)
         }
         // Doorway/crawl-hole fit (chase pathfinding): cap the size so the body slips through
@@ -403,7 +444,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // at full size and climbed the hillside instead of coming in. Sizing to fit where the
         // prey is standing makes it able to follow them in regardless of what the AI decided.
         if (!squeezing && nearest != null && horizontalDistance < 14.0) {
-            SafeGroundFinder.confinementAt(level, nearest.x, nearest.y + 0.5, nearest.z,
+            SafeGroundFinder.confinementAt(level, nearest.x, nearest.y, nearest.z,
                 body.walkGait.stationary.bodyHeight).headroom?.let { room ->
                 targetScale = targetScale.coerceAtMost(fitFor(room))
             }
@@ -579,6 +620,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private fun rollTrophy(level: ServerLevel) {
         if (trophyRolled) return
         trophyRolled = true
+
+        // ADVANCEMENTS: the kill, and the boss kill. lastHurtByPlayer is vanilla's own kill
+        // attribution (it holds the reference for 100 ticks), so this credits exactly who the
+        // game would credit. It lives in rollTrophy deliberately: that is the one funnel proven
+        // to fire on every real death and never on a despawn, chunk unload or dimension follow.
+        (lastHurtByPlayer as? ServerPlayer)?.let { killer ->
+            killer.grantAdvancement(Advancements.SLAY)
+            if (enraged) killer.grantAdvancement(Advancements.SLAY_BOSS)
+        }
         // Same funnel = same guarantees: this fires on every real death and never on a peaceful
         // despawn, chunk unload or dimension follow, which is exactly what permadeath needs.
         SpiderSpawnManager.notifyKilled(level.server)

@@ -1,0 +1,16 @@
+{
+  "parent": "arachnomod:encounter",
+  "display": {
+    "icon": { "item": "minecraft:moss_block" },
+    "title": "If It Bleeds, We Can Kill It",
+    "description": "Find the Camo variant - or rather, notice that a piece of the scenery has been following you.",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "impossible": { "trigger": "minecraft:impossible" }
+  },
+  "requirements": [ [ "impossible" ] ]
+}

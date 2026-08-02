@@ -2,10 +2,21 @@
 
 **A giant, procedurally-animated spider that hunts you across the world.** One roams at a time.
 It patrols, spots you, freezes to stare you down — then charges, towering over the trees and
-shrinking as it closes in for the bite. Its eight legs are driven by real **FABRIK
-inverse-kinematics**, drawn entirely with vanilla **BlockDisplay** entities, so it moves like
-nothing else in Minecraft. Since v1.1.1 it may spawn as the **CAMO variant**: active camouflage
-that repaints each leg as the block it walks on, with block-true footsteps.
+shrinking as it closes in for the bite. Its legs are driven by real **FABRIK inverse-kinematics**,
+drawn entirely with vanilla **BlockDisplay** entities, so it moves like nothing else in Minecraft.
+
+It hunts in **four variants**: the armoured **netherite** classic; the **camo** chameleon, which
+repaints each leg as the block it stands on and steps with that block's own sound; the **poison**
+tarantula, which rears up and lunges to inject Poison II; and the pitch-black **hunter**, which
+moves only while nobody is looking at it and blinds anyone who gets close. Feed the netherite one a
+**netherite ingot** and it enrages into a boss with a real boss bar — and a guaranteed netherite
+block if you can put it down.
+
+It threads your doorways and corridors, squeezes into a 1×1 hole to reach a player who dug in,
+grows in deep water, follows you between dimensions, and — with `permadeath` on — never returns
+once you finally kill it. **Seven advancements** track the hunt. Every number is tunable from
+`config/arachnomod-common.toml` or live in-game via `/spider config`, including the netherite
+spider's armour and its leg count (1–16, default 8).
 
 > ⚠️ **Arachnophobia warning** — the movement is realistic on purpose. See the CurseForge page.
 

@@ -119,8 +119,11 @@ class SpiderBody(
         activeLaneX = passageLaneX
         activeLaneZ = passageLaneZ
 
+        // Ask about the GROUND PLANE the legs stand on, not the body centre: an oversized body's
+        // centre sits above the passage ceiling, and asking from up there reports "not confined".
+        val bodyHeight = lerpedGait().bodyHeight
         val confinement = SafeGroundFinder.confinementAt(
-            level, position.x, position.y, position.z, lerpedGait().bodyHeight)
+            level, position.x, position.y - bodyHeight, position.z, bodyHeight)
         if (activePinY == null) activePinY = confinement.floorY
         if (activeLaneX == null) activeLaneX = confinement.laneX
         if (activeLaneZ == null) activeLaneZ = confinement.laneZ

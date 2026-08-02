@@ -5,6 +5,8 @@ import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import org.joml.Matrix4f
 import org.joml.Vector3d
+import kotlin.math.PI
+import kotlin.math.sin
 
 /*
  * Ported from `spider/presets/presets.kt` + `applyLegModels.kt`.
@@ -126,18 +128,85 @@ fun octoBot(segmentCount: Int, segmentLength: Double): SpiderOptions {
 }
 
 /**
+ * ANY number of legs, on the octopod's proportions. The hand-authored presets above only cover
+ * 2/4/6/8; this interpolates the same shape for an arbitrary count so `netheriteLegs` can be set
+ * to anything without the spider looking wrong.
+ *
+ * Pairs are spread front-to-back along the octopod's own span (rest Z +1.6 → -2.5), the reach
+ * bulges at the waist the way the original does (X 1.0 at the ends, 1.3 in the middle), and the
+ * rearmost legs get the long trailing segments that give the silhouette its drag.
+ *
+ * ODD counts get one extra unpaired leg on the centre line, out front. Nothing in the gait
+ * strictly needs pairs — every lookup in LegLookUp is index arithmetic, and the two that could
+ * run off the end are guarded — but an odd spider genuinely walks worse, because the diagonal
+ * gait it uses is built out of opposing pairs. At 1 and 2 legs there is no gait left at all: the
+ * body drags itself along on whatever it can plant, which is the point of trying it.
+ */
+fun legged(legCount: Int, segmentCount: Int, segmentLength: Double): SpiderOptions {
+    val o = SpiderOptions()
+    val count = legCount.coerceIn(MIN_LEGS, MAX_LEGS)
+    val pairs = count / 2
+
+    for (i in 0 until pairs) {
+        // t runs 0 (front pair) → 1 (rear pair); a lone pair sits at the waist.
+        val t = if (pairs == 1) 0.5 else i.toDouble() / (pairs - 1)
+        val rootZ = 0.1 + (-0.2 - 0.1) * t
+        val restZ = 1.6 + (-2.5 - 1.6) * t
+        val restX = 1.0 + 0.3 * sin(PI * t)          // waist bulge, as in the octopod
+        val length = (1.05 + 0.55 * t * t) * segmentLength   // rear legs trail longest
+        o.bodyPlan.addLegPair(
+            Vector3d(.0, .0, rootZ),
+            Vector3d(restX, .0, restZ),
+            equalLength(segmentCount, length),
+        )
+    }
+
+    // Odd count: one unpaired leg on the centre line, reaching forward.
+    if (count % 2 == 1) {
+        o.bodyPlan.legs = o.bodyPlan.legs + LegPlan(
+            Vector3d(.0, .0, 0.15),
+            Vector3d(.0, .0, 1.8),
+            equalLength(segmentCount, 1.1 * segmentLength),
+        )
+    }
+
+    applyLineLegModel(o.bodyPlan, NETHERITE)
+    return o
+}
+
+/** Hard bounds on the leg count. Above 16 the leg displays get silly and expensive; below 1
+ *  there is no spider at all. */
+const val MIN_LEGS = 1
+const val MAX_LEGS = 16
+
+/**
  * The spider the mod spawns: a faithful octopod (8 legs, netherite texture) at 3 segments / length
  * 1, with NO central torso — the legs converge to the body point exactly like the original mod.
  * Speed tuning comes from config/arachnomod-common.toml (read at spawn time).
+ *
+ * NOTE: this stays at EIGHT legs on purpose. It is the base every other variant is built from
+ * (camo/poison/hunter re-skin it, and /spider newinstance uses it), so the configurable leg count
+ * lives in [netheriteSpider] instead — otherwise `netheriteLegs` would silently reshape all four.
  */
-fun defaultSpider(): SpiderOptions {
-    val o = octopod(3, 1.0)
+fun defaultSpider(): SpiderOptions = applyConfiguredGait(octopod(3, 1.0))
+
+/** The config-driven speed tuning every spider the mod spawns shares. */
+private fun applyConfiguredGait(o: SpiderOptions): SpiderOptions {
     val maxSpeed = com.heledron.spideranimation.Config.CHASE_SPEED.get() / 20.0   // blocks/sec -> blocks/tick
     o.walkGait.maxSpeed = maxSpeed
     o.walkGait.moveAcceleration = maxSpeed * 0.375   // keeps the tuned accel:speed ratio (.15 at .4)
     o.walkGait.legMoveSpeed = com.heledron.spideranimation.Config.LEG_STEP_SPEED.get()
     return o
 }
+
+/**
+ * THE NETHERITE variant — the only one whose leg count is configurable (`netheriteLegs`,
+ * default 8 = the classic octopod). The original mod shipped biped/quadruped/hexapod/octopod
+ * bodies; this restores that idea as a live setting on the original spider, and leaves the three
+ * later variants on their fixed 8 so their own gimmicks stay recognisable.
+ */
+fun netheriteSpider(): SpiderOptions =
+    applyConfiguredGait(legged(com.heledron.spideranimation.Config.NETHERITE_LEGS.get(), 3, 1.0))
 
 /**
  * The CAMO variant: identical geometry/gait to [defaultSpider], with ACTIVE camouflage — every
