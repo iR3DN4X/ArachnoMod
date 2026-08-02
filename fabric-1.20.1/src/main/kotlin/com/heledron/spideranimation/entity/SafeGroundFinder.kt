@@ -246,6 +246,55 @@ object SafeGroundFinder {
      * deadlock; see the floor hunt below.
      */
     fun confinementAt(level: ServerLevel, x: Double, groundY: Double, z: Double, bodyHeight: Double): Confinement {
+        val r = readSpace(level, x, groundY, z) ?: return NOT_CONFINED
+
+        // A ceiling only constrains a body that is actually UNDER it. THIS IS THE FIX FOR THE
+        // BOUNCING GIANT: a ten-block-tall spider walking through a forest has leaves three
+        // blocks above its FEET and nothing whatsoever near its body, ten blocks up. Reading that
+        // as a three-block ceiling capped it to scale 2 — so it shrank, the column beneath it
+        // changed, the cap vanished, it regrew, and it strobed between huge and tiny forever.
+        // This cap exists to stop a body inflating INSIDE a tunnel, so require it to BE in one.
+        // The +1.0 slack deliberately still catches a body slightly too big for the passage it is
+        // entering, which is the case that most needs shrinking.
+        if (r.roofed && bodyHeight > r.headroom + 1.0) return NOT_CONFINED
+
+        // Big bodies must not be lane-locked by scenery they simply STRIDE OVER. A tall spider
+        // crossing a one-block ditch, or stepping between two low blocks, has walls beside its
+        // FEET and nothing beside its body — pinning it to a centre line there would be a brand
+        // new way to get stuck. So an unroofed pinch only confines if its walls rise into the body.
+        if (!r.roofed && sideWallHeight(level, r.bx, r.bz, r.feetY, r.walledX) < bodyHeight * 0.6)
+            return NOT_CONFINED
+
+        return Confinement(
+            floorY = if (r.headroom < bodyHeight + 1.5) r.floorTop else null,
+            laneX = if (r.walledX) r.bx + 0.5 else null,
+            laneZ = if (r.walledZ && !r.walledX) r.bz + 0.5 else null,
+            headroom = if (r.roofed) r.headroom else null,
+        )
+    }
+
+    /**
+     * How much headroom a tight space has AT A LOCATION, asked without reference to any body.
+     *
+     * This is deliberately NOT [confinementAt]: that one answers "is MY body squeezed here", and
+     * so is rightly gated on the asker's size. This one answers "how much room is there where my
+     * PREY is standing", which is a fact about the world — the spider needs it precisely WHEN it
+     * is far too big for the answer, so gating it on the spider's own height would mean a giant
+     * could never learn it has to shrink to follow you into a corridor.
+     */
+    fun roomAt(level: ServerLevel, x: Double, groundY: Double, z: Double): Double? {
+        val r = readSpace(level, x, groundY, z) ?: return null
+        return if (r.roofed) r.headroom else null
+    }
+
+    /** The raw geometry of the space at a point: the floor, the walls beside it, the ceiling. */
+    private class Space(
+        val bx: Int, val bz: Int, val feetY: Int, val floorTop: Double,
+        val walledX: Boolean, val walledZ: Boolean, val headroom: Double, val roofed: Boolean,
+    )
+
+    /** Null when this is not a tight space at all (no floor, feet elsewhere, or no side walls). */
+    private fun readSpace(level: ServerLevel, x: Double, groundY: Double, z: Double): Space? {
         val bx = floor(x).toInt()
         val bz = floor(z).toInt()
 
@@ -264,18 +313,18 @@ object SafeGroundFinder {
         for (dy in 0 downTo -4) {
             if (isBodyBlocking(level, bx, startY + dy, bz)) { floorTop = (startY + dy + 1).toDouble(); break }
         }
-        if (floorTop.isNaN()) return NOT_CONFINED
+        if (floorTop.isNaN()) return null
         // Are the legs actually standing on THIS floor? Size-independent, unlike the old test,
         // which measured the body CENTRE against a fixed 2.5-block tolerance and so was failed by
         // any spider taller than that simply for being tall.
         val offGround = groundY - floorTop
-        if (offGround > 1.5 || offGround < -1.5) return NOT_CONFINED
+        if (offGround > 1.5 || offGround < -1.5) return null
 
         // Walls on both sides of one axis = a corridor, and its centre line is this column.
         val feetY = floorTop.toInt()
         val walledX = isBodyBlocking(level, bx + 1, feetY, bz) && isBodyBlocking(level, bx - 1, feetY, bz)
         val walledZ = isBodyBlocking(level, bx, feetY, bz + 1) && isBodyBlocking(level, bx, feetY, bz - 1)
-        if (!walledX && !walledZ) return NOT_CONFINED
+        if (!walledX && !walledZ) return null
 
         // Headroom decides whether the height has to be pinned: the collision step casts from a
         // block ABOVE the body, so a ceiling that close would "hit" and teleport it upward.
@@ -283,24 +332,14 @@ object SafeGroundFinder {
         for (dy in 0..4) {
             if (isBodyBlocking(level, bx, feetY + dy, bz)) { headroom = dy.toDouble(); break }
         }
-        // A ceiling at all means the size has to be capped; a LOW one also pins the height.
-        val roofed = headroom != Double.MAX_VALUE
+        // A "ceiling" of ZERO is not a ceiling. dy starts at the block the feet are IN, so
+        // headroom 0 means the sampled column is solid at foot level: the body is STRADDLING
+        // terrain — a giant's centre passing over a tree trunk or a hillock — not standing in a
+        // tunnel. Taken as a real reading it became a zero-height ceiling, and fitFor(0.0) clamps
+        // to its floor of 0.12: that is what collapsed a size-14 spider to nothing in one step.
+        val roofed = headroom != Double.MAX_VALUE && headroom >= 1.0
 
-        // Now that big bodies are visible to this scan at all, they must not be lane-locked by
-        // scenery they simply STRIDE OVER. A tall spider crossing a one-block ditch, or stepping
-        // between two low blocks, has walls beside its FEET and nothing beside its body — pinning
-        // it to a centre line there would be a brand new way to get stuck. So an unroofed pinch
-        // only counts as confining if its walls actually rise into the body.
-        if (!roofed && sideWallHeight(level, bx, bz, feetY, walledX) < bodyHeight * 0.6) return NOT_CONFINED
-
-        val pinFloor = if (headroom < bodyHeight + 1.5) floorTop else null
-
-        return Confinement(
-            floorY = pinFloor,
-            laneX = if (walledX) bx + 0.5 else null,
-            laneZ = if (walledZ && !walledX) bz + 0.5 else null,
-            headroom = if (roofed) headroom else null,
-        )
+        return Space(bx, bz, feetY, floorTop, walledX, walledZ, headroom, roofed)
     }
 
     /** How far the confining side walls rise above the passage floor, in blocks (capped at 7). */

@@ -186,6 +186,14 @@ object Config {
         comment("Closest distance (blocks) from a player that a spider may naturally spawn."))
     val SPAWN_DISTANCE_MAX = DoubleValue("spawnDistanceMax", 34.0, 4.0, 128.0,
         comment("Farthest distance (blocks) from a player that a spider may naturally spawn."))
+    val RELOCATE_DISTANCE = DoubleValue("relocateDistanceBlocks", 192.0, 0.0, 4096.0,
+        comment("If the living spider ends up this far from EVERY player while its chunk is STILL",
+                "LOADED, it relocates to a fresh safe spot near someone instead of idling out there",
+                "forever. Walking away normally unloads its chunk and it already relocates instantly;",
+                "this covers the cases where something keeps the chunk loaded anyway - spawn chunks,",
+                "a chunk loader, or another player standing nearby on a server. Relocating NEVER",
+                "counts as a kill: no trophy, no 40-minute cooldown, and permadeath is not triggered.",
+                "Set to 0 to leave it wherever it happens to be."))
     val SPAWN_ANGLE_ATTEMPTS = IntValue("spawnAngleAttempts", 24, 4, 64,
         comment("How many directions around the player are tested at each candidate distance when",
                 "looking for safe ground. If the spider fails to spawn in rough terrain (dense",

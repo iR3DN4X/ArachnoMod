@@ -105,6 +105,7 @@ object SpiderSpawnManager {
         scheduleElapsed = 0
         pendingPeacefulExit = false
         abandonedTicks = 0
+        strandedTicks = 0
         janitorTimer = 0
         stateLoaded = false     // the next world loads its own kill record
         killCount = 0
@@ -171,6 +172,12 @@ object SpiderSpawnManager {
     private var abandonedTicks = 0
     private const val FOLLOW_GRACE_TICKS = 100   // 5s grace so a quick portal peek doesn't yo-yo it
 
+    // Ticks the live spider has spent further than relocateDistanceBlocks from every player in its
+    // own dimension while still loaded. Longer grace than the dimension follow: sprinting a couple
+    // of hundred blocks and turning straight back around should not teleport it.
+    private var strandedTicks = 0
+    private const val STRANDED_GRACE_TICKS = 200   // 10s
+
     fun tick(server: MinecraftServer) {
         janitorSweep(server)
         if (!stateLoaded) loadState(server)
@@ -193,15 +200,36 @@ object SpiderSpawnManager {
 
             val hasCompany = cur.level().players().isNotEmpty()
             val anyPlayers = server.playerList.players.isNotEmpty()
-            if (hasCompany || !anyPlayers) {
-                abandonedTicks = 0
-            } else if (++abandonedTicks >= FOLLOW_GRACE_TICKS) {
-                abandonedTicks = 0
+            if (!hasCompany && anyPlayers) {
+                if (++abandonedTicks >= FOLLOW_GRACE_TICKS) {
+                    abandonedTicks = 0
+                    followToPlayer(server, cur)
+                }
+                return
+            }
+            abandonedTicks = 0
+
+            // STRANDED BUT STILL LOADED. Walking far away normally unloads the spider's chunk, and
+            // the removal branch below already relocates it next to someone the moment that
+            // happens — so the usual "I ran 1000 blocks, is it lost forever?" case was never a
+            // problem. What IS a problem is anything that keeps its chunk loaded while every
+            // player is elsewhere: spawn chunks, a chunk loader, or another player on a server.
+            // There it would idle out of play indefinitely while the hunt is happening somewhere
+            // else. Same remedy as dimension following, and the same guarantee — followToPlayer
+            // detaches `current` BEFORE discarding, and discards it ALIVE, so this can never be
+            // read as a kill: no trophy, no long cooldown, no permadeath tick.
+            val limit = Config.RELOCATE_DISTANCE.get()
+            if (!hasCompany || limit <= 0.0) { strandedTicks = 0; return }
+            val closestSq = cur.level().players().minOf { it.distanceToSqr(cur.x, cur.y, cur.z) }
+            if (closestSq <= limit * limit) { strandedTicks = 0; return }
+            if (++strandedTicks >= STRANDED_GRACE_TICKS) {
+                strandedTicks = 0
                 followToPlayer(server, cur)
             }
             return
         }
         abandonedTicks = 0
+        strandedTicks = 0
 
         // The tracked spider left the world — figure out why.
         if (cur != null) {

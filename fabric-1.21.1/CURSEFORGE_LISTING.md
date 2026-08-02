@@ -210,7 +210,12 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.8.1 (latest) — all four builds
+### v1.8.2 (latest) — all four builds
+- **Fixed: the giant no longer strobes between huge and tiny.** 🔁 Backing away from it made it flicker wildly instead of growing to its full towering size. The tight-space sense that lets it fit through your doorways was reading ordinary scenery as a ceiling — a tree trunk under its feet counted as a zero-height roof, and a leaf canopy three blocks over its feet was "low ceiling" to a body ten blocks tall — so it shrank, the ground beneath it changed, the cap lifted, it regrew, forever. A ceiling now only counts if the spider is actually **under** it. It grows to full size and *stays* there. 🕷️
+- **It comes to you instead of getting lost.** 🧭 If the living spider ends up more than **192 blocks** from every player while something is still keeping its chunk loaded (spawn chunks, a chunk loader, another player on a server), it now relocates to a fresh spot near someone rather than idling out of play. New `relocateDistanceBlocks` (0 disables). **This never counts as a kill** — no trophy, no 40-minute cooldown, and permadeath is not triggered. Note this was already handled for the ordinary case: walking far enough away unloads its chunk, and it has always respawned near you immediately when that happens.
+- **The Enraged boss lost its floating nametag.** The red boss bar at the top of the screen says everything; a second label hanging in the air was just clutter. The name still appears in death messages.
+
+### v1.8.1 — all four builds
 - **Fixed: it gets through your doorways and down your corridors again.** 🚪 A spider that came at you from a distance arrived **large** — and a large spider was invisible to its own tight-space sense, so it never knew to shrink. It would park outside the door, or wedge itself in a corridor ceiling, and stay there. The cause was a ratchet: the check that measures the space around the body looked *downward from the body's middle*, and on a body too big for the passage that middle sits **above the ceiling** — so the check found the ceiling, mistook it for the floor, and reported "plenty of room". Having grown too big to notice the corridor, it could never be told to shrink back down. It now measures from **where its legs are standing**, which works at any size: it sizes down to fit a passage no matter how big it arrives, and holds that size for the whole length instead of swelling up into the roof halfway through. 🕷️
 - Big spiders still stride over low walls and one-block ditches exactly as before — only genuinely enclosing spaces hold them.
 - **NEW: SEVEN ADVANCEMENTS.** 🏆 The hunt now keeps score. They live in their own tab, and none of them are the kind you get by accident:

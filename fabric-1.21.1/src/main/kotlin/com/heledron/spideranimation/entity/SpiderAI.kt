@@ -408,8 +408,10 @@ object SpiderAI {
         // used to charge at full size, meet the wall beside the entrance, and climb it. If the
         // prey is somewhere too low for the spider as it currently is, that line is a lie:
         // hunt for the way in and thread it instead.
-        val playerRoom = SafeGroundFinder.confinementAt(
-            level, player.x, player.y, player.z, bodyHeight).headroom
+        // roomAt, not confinementAt: this asks how much room is where the PLAYER is, which must
+        // not be gated on the spider's own size — the whole point is to notice when the spider is
+        // far too big for it.
+        val playerRoom = SafeGroundFinder.roomAt(level, player.x, player.y, player.z)
         val tooBigForPlayersSpot = playerRoom != null && playerRoom < bodyHeight + 0.5
 
         if (direct.walkable && !tooBigForPlayersSpot) {

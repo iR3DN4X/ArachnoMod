@@ -227,7 +227,10 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         enraged = true
         body?.enraged = true
         customName = Component.literal("Enraged Netherite Spider")
-        isCustomNameVisible = true
+        // NO floating nametag: the red boss bar at the top of the screen already announces it,
+        // and a second label hanging over the spider was just noise. customName is still SET, so
+        // death messages and the boss bar keep the name - it simply isn't drawn in the world.
+        isCustomNameVisible = false
         val attr = getAttribute(Attributes.MAX_HEALTH)
         val oldMax = attr?.baseValue ?: maxHealth.toDouble()
         val newMax = Config.ENRAGED_MAX_HEALTH.get().coerceAtLeast(oldMax)
@@ -445,8 +448,10 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // at full size and climbed the hillside instead of coming in. Sizing to fit where the
         // prey is standing makes it able to follow them in regardless of what the AI decided.
         if (!squeezing && nearest != null && horizontalDistance < 14.0) {
-            SafeGroundFinder.confinementAt(level, nearest.x, nearest.y, nearest.z,
-                body.walkGait.stationary.bodyHeight).headroom?.let { room ->
+            // roomAt, not confinementAt: a fact about where the prey stands, not about this
+            // body. Gating it on the spider's own height would mean a giant never learns it has
+            // to shrink to follow you in - which is exactly when it needs to.
+            SafeGroundFinder.roomAt(level, nearest.x, nearest.y, nearest.z)?.let { room ->
                 targetScale = targetScale.coerceAtMost(fitFor(room))
             }
         }
