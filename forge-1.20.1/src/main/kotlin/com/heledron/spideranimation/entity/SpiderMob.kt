@@ -226,11 +226,14 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private fun enrage(level: ServerLevel) {
         enraged = true
         body?.enraged = true
-        customName = Component.literal("Enraged Netherite Spider")
-        // NO floating nametag: the red boss bar at the top of the screen already announces it,
-        // and a second label hanging over the spider was just noise. customName is still SET, so
-        // death messages and the boss bar keep the name - it simply isn't drawn in the world.
-        isCustomNameVisible = false
+        // NO CUSTOM NAME AT ALL. Setting one and merely hiding it (isCustomNameVisible = false)
+        // was not enough: the name still surfaced as a label on screen, because anything holding a
+        // custom name is fair game for vanilla's name rendering AND for HUD mods like Jade / WTHIT
+        // / TheOneProbe, which happily draw it whatever the visibility flag says. The only way to
+        // be rid of it on every version and every setup is to never set one.
+        //
+        // Nothing is lost: the boss bar carries its own literal name (see bossEvent above), and
+        // death messages fall back to the entity type name, "Netherite Octoarachnopod".
         val attr = getAttribute(Attributes.MAX_HEALTH)
         val oldMax = attr?.baseValue ?: maxHealth.toDouble()
         val newMax = Config.ENRAGED_MAX_HEALTH.get().coerceAtLeast(oldMax)

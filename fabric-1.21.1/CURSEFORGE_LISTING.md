@@ -210,7 +210,10 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.8.2 (latest) — all four builds
+### v1.8.3 (latest) — all four builds
+- **The Enraged boss's name label is properly gone now.** 🏷️ v1.8.2 hid it, but hiding wasn't enough — anything carrying a custom name is still fair game for vanilla's name rendering and for HUD mods like Jade, WTHIT and TheOneProbe, which draw it regardless. The boss simply doesn't get a custom name any more. **The big red boss bar is untouched** — it carries its own name and is now the only place the title appears. Death messages read "Netherite Octoarachnopod".
+
+### v1.8.2 — all four builds
 - **Fixed: the giant no longer strobes between huge and tiny.** 🔁 Backing away from it made it flicker wildly instead of growing to its full towering size. The tight-space sense that lets it fit through your doorways was reading ordinary scenery as a ceiling — a tree trunk under its feet counted as a zero-height roof, and a leaf canopy three blocks over its feet was "low ceiling" to a body ten blocks tall — so it shrank, the ground beneath it changed, the cap lifted, it regrew, forever. A ceiling now only counts if the spider is actually **under** it. It grows to full size and *stays* there. 🕷️
 - **It comes to you instead of getting lost.** 🧭 If the living spider ends up more than **192 blocks** from every player while something is still keeping its chunk loaded (spawn chunks, a chunk loader, another player on a server), it now relocates to a fresh spot near someone rather than idling out of play. New `relocateDistanceBlocks` (0 disables). **This never counts as a kill** — no trophy, no 40-minute cooldown, and permadeath is not triggered. Note this was already handled for the ordinary case: walking far enough away unloads its chunk, and it has always respawned near you immediately when that happens.
 - **The Enraged boss lost its floating nametag.** The red boss bar at the top of the screen says everything; a second label hanging in the air was just clutter. The name still appears in death messages.
