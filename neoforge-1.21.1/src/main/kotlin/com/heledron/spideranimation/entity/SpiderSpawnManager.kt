@@ -351,6 +351,10 @@ object SpiderSpawnManager {
      *     farther-from-the-player over closer (it should never spawn on top of you).
      *  3. Only if the whole configured band is unsafe (mid-ocean, a SkyBlock gap): expanding rings
      *     BEYOND spawnDistanceMax until safe ground is found or we give up and retry later.
+     *  4. SKYBLOCK LAST RESORT: rings INWARD of spawnDistanceMin, down to
+     *     spawnCloseFallbackDistance. On a skybase every ring from the minimum outward is void,
+     *     so without this the spider simply never spawned there — no amount of extra angles helps
+     *     when the only land in the world is behind you rather than around you.
      */
     private fun trySpawnNear(player: ServerPlayer): Boolean {
         // A ServerPlayer's level() is always a ServerLevel.
@@ -384,6 +388,23 @@ object SpiderSpawnManager {
             val spot = findSafeSpot(level, player, ringDistance, angles)
             if (spot != null) return spawnAt(level, spot.first, spot.second, spot.third)
             ringDistance += ringStep
+        }
+
+        // Stage 4: SKYBLOCK. Everything from spawnDistanceMin outwards is void, and on a skybase
+        // that is the normal state of the world — the only solid ground is the island under the
+        // player's feet, which is usually INSIDE the minimum distance. Stages 1–3 can only ever
+        // look at or beyond that minimum, so on those maps no spider could spawn AT ALL, however
+        // high spawnAngleAttempts was set. Having exhausted every polite option, sweep INWARD:
+        // nearest-acceptable-last, so it still takes the farthest spot the island offers and only
+        // ends up close if that is genuinely all there is. Off when the config distance is 0.
+        val closeLimit = Config.SPAWN_CLOSE_FALLBACK_DISTANCE.get()
+        if (closeLimit > 0.0 && closeLimit < minDistance) {
+            var inward = minDistance - ringStep
+            while (inward >= closeLimit) {
+                val spot = findSafeSpot(level, player, inward, angles)
+                if (spot != null) return spawnAt(level, spot.first, spot.second, spot.third)
+                inward -= ringStep
+            }
         }
 
         return false   // truly nowhere safe right now; the manager retries in RETRY_TICKS

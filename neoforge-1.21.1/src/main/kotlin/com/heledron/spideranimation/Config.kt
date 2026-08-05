@@ -176,10 +176,24 @@ object Config {
         "a chunk loader, or another player standing nearby on a server. Relocating NEVER",
         "counts as a kill: no trophy, no 40-minute cooldown, and permadeath is not triggered.",
         "Set to 0 to leave it wherever it happens to be.")
-    val SPAWN_ANGLE_ATTEMPTS = define("spawnAngleAttempts", 24, 4, 64,
+    val SPAWN_ANGLE_ATTEMPTS = define("spawnAngleAttempts", 24, 4, 1024,
         "How many directions around the player are tested at each candidate distance when",
         "looking for safe ground. If the spider fails to spawn in rough terrain (dense",
-        "forest, snowy peaks, cliffs), RAISE this - more directions = more spawn spots found.")
+        "forest, snowy peaks, cliffs), RAISE this - more directions = more spawn spots found.",
+        "SKYBLOCK / SKYBASE: a small island is only a thin slice of the circle around you,",
+        "so most directions find nothing but void - this is the number to crank. The old",
+        "ceiling of 64 was not enough for some maps; it now goes to 1024. The cost is real",
+        "but only paid while LOOKING for a spawn: one column scan per direction per ring.")
+    val SPAWN_CLOSE_FALLBACK_DISTANCE = define("spawnCloseFallbackDistance", 6.0, 0.0, 128.0,
+        "LAST-RESORT SKYBLOCK FALLBACK. Normally the spider never spawns closer than",
+        "spawnDistanceMin so it cannot pop up in your face, and when the whole band is void",
+        "it searches FARTHER out. On a skybase that fails completely: the only solid ground",
+        "in the world is the island you are standing on, which is usually INSIDE the minimum",
+        "distance - so every ring is void and no spider ever spawns. Once everything else",
+        "has failed, the search now sweeps INWARD as far as this distance before giving up.",
+        "Default 6 blocks - close, but not on top of you, and low enough to still find a",
+                "starter island only a few blocks wide. Set to 0 to disable the fallback",
+        "and keep the strict minimum distance.")
     val SPAWN_MAX_VERTICAL_SEARCH = define("spawnMaxVerticalSearch", 48, 4, 384,
         "How many blocks downward from the surface a candidate column is scanned looking for",
         "solid, dry ground before that candidate is rejected. Keep this generous for SkyBlock",

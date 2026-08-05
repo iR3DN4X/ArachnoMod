@@ -210,7 +210,14 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.8.3 (latest) — all four builds
+### v1.8.4 (latest) — all four builds
+- **SKYBLOCK / SKYBASE SUPPORT.** 🏝️ On a floating-island world the spider often never spawned at all, and cranking the spawn settings couldn't save it. Two things were wrong, and both are fixed:
+  - **`spawnAngleAttempts` was capped at 64.** A small island is only a thin slice of the circle around you, so most directions find nothing but void and you need far more samples. The ceiling is now **1024**.
+  - **The search could never look CLOSER than `spawnDistanceMin`.** It only ever swept outward — and on a skybase everything outward is void, because the only land in the world is the island under your feet, *inside* that minimum. So no number of angles could ever help. Once every normal option is exhausted, the search now sweeps **inward** in 1-block steps down to the new **`spawnCloseFallbackDistance`** (default 6 blocks; set 0 to disable and keep the strict minimum). It still takes the farthest spot the island offers and only ends up close if that's genuinely all there is.
+  - Verified in a real void world: a 13×13 island had **no spawnable ring at all** at or beyond the minimum distance even with 1024 angles — and now spawns reliably.
+  - Thanks to **NetherySiloX** for reporting it and pushing for the cap to go. 🕷️
+
+### v1.8.3 — all four builds
 - **The Enraged boss's name label is properly gone now.** 🏷️ v1.8.2 hid it, but hiding wasn't enough — anything carrying a custom name is still fair game for vanilla's name rendering and for HUD mods like Jade, WTHIT and TheOneProbe, which draw it regardless. The boss simply doesn't get a custom name any more. **The big red boss bar is untouched** — it carries its own name and is now the only place the title appears. Death messages read "Netherite Octoarachnopod".
 
 ### v1.8.2 — all four builds
