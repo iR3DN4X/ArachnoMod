@@ -210,7 +210,11 @@ Fabric:
 
 ## 📜 Full changelog
 
-### v1.8.4 (latest) — all four builds
+### v1.8.4 (latest) — now on SIX builds
+- **NEW: MINECRAFT 26.1.2, on Fabric and NeoForge.** 🕸️ The spider makes the jump to the new version scheme — the same mod, same feature set, same config, rebuilt against 26.1.2. This was a real port, not a recompile: 26.1 is the first **unobfuscated** Minecraft, and eleven releases of API changes sit between it and 1.21.1. Notable for anyone curious: `ResourceLocation` became `Identifier`, entity registration and spawn eggs were overhauled, and command permissions stopped being numbers.
+  - **Requires Java 25** — that's Minecraft's own requirement for 26.1, not the mod's.
+  - **Quilt players are covered by the Fabric jar.** Quilt Loader supports 26.1.2 and runs Fabric mods; a separate Quilt build isn't needed (and isn't possible — Quilt's own standard libraries were discontinued in December 2025).
+  - **No Forge build for 26.x.** MinecraftForge has no release for any 26 version, so there is nothing to build against. The 1.20.1 Forge build is unaffected and still supported.
 - **SKYBLOCK / SKYBASE SUPPORT.** 🏝️ On a floating-island world the spider often never spawned at all, and cranking the spawn settings couldn't save it. Two things were wrong, and both are fixed:
   - **`spawnAngleAttempts` was capped at 64.** A small island is only a thin slice of the circle around you, so most directions find nothing but void and you need far more samples. The ceiling is now **1024**.
   - **The search could never look CLOSER than `spawnDistanceMin`.** It only ever swept outward — and on a skybase everything outward is void, because the only land in the world is the island under your feet, *inside* that minimum. So no number of angles could ever help. Once every normal option is exhausted, the search now sweeps **inward** in 1-block steps down to the new **`spawnCloseFallbackDistance`** (default 6 blocks; set 0 to disable and keep the strict minimum). It still takes the farthest spot the island offers and only ends up close if that's genuinely all there is.

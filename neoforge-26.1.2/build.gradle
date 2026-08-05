@@ -1,0 +1,84 @@
+// ArachnoMod - NeoForge 26.1.2 port of TheCymaera/minecraft-spider
+//
+// Build:  gradle build      -> JAR appears in build/libs/
+// Run:    gradle runClient  (singleplayer dev client)
+//
+// ============================================================================================
+// 26.1 IS THE FIRST UNOBFUSCATED MINECRAFT, which changes this build too:
+//   * Parchment is gone and no longer needed — Mojang's own parameter names ship with the game.
+//   * The access transformer at the DEFAULT path is still auto-detected, and its entries stay in
+//     plain Mojang names (as the 1.21.1 project already did; the 1.20.1 SRG-name era is past).
+// The shared engine here is copied VERBATIM from the Fabric 26.1.2 port, which is already
+// migrated — so the only Minecraft-API work left in this project is its own loader layer.
+// ============================================================================================
+//
+// TOOLCHAIN (26.1 raised every floor at once):
+//   net.neoforged.moddev plugin ... 2.0.143
+//   NeoForge ...................... 26.1.2.94
+//   KotlinForForge ................ 6.3.0     (the 6.x line is the one for 26.x)
+//   Kotlin Gradle plugin .......... 2.4.10    (the compiler must be at least as new as the
+//                                    Kotlin KFF was built with — the long-standing rule here)
+//   JAVA .......................... 25
+//   Gradle ........................ 9.4.0     (MDG needs 9.1+ for 26.1)
+
+plugins {
+    id 'java'
+    id 'org.jetbrains.kotlin.jvm' version '2.4.10'
+    id 'net.neoforged.moddev' version '2.0.143'
+}
+
+group = 'com.heledron'
+version = '1.8.4'
+
+base {
+    archivesName = 'arachnomod_neoforge_26.1.2'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://thedarkcolour.github.io/KotlinForForge/' }
+}
+
+neoForge {
+    version = '26.1.2.94'
+
+    // Access Transformer lives at the DEFAULT path
+    // (src/main/resources/META-INF/accesstransformer.cfg) so ModDevGradle picks it up
+    // automatically. Do NOT set `accessTransformers` to a list of strings — that disables the
+    // auto-detection and silently breaks compile-time AT application.
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+        }
+    }
+
+    mods {
+        arachnomod {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+dependencies {
+    // KotlinForForge: Kotlin stdlib at runtime + the language loader that lets the @Mod
+    // entrypoint be a Kotlin `object`.
+    implementation 'thedarkcolour:kotlinforforge-neoforge:6.3.0'
+}
+
+kotlin {
+    jvmToolchain(25)
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25
+    }
+}

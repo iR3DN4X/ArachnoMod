@@ -1,0 +1,8 @@
+.gradle/
+build/
+run/
+*.classpath
+*.project
+.settings/
+.idea/
+*.iml

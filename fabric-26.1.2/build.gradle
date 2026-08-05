@@ -1,0 +1,97 @@
+// ArachnoMod - Fabric 26.1.2 port of TheCymaera/minecraft-spider
+//
+// Build:  gradle build      -> JAR appears in build/libs/
+// Run:    gradle runClient  (singleplayer dev client)
+//
+// ============================================================================================
+// 26.1 IS THE FIRST UNOBFUSCATED MINECRAFT. That single fact rewrites this whole file:
+//
+//   * There is NO `mappings` line any more, and there cannot be. Mojang stopped shipping
+//     obfuscation maps with 26.1 because the game now ships with real names - the version
+//     manifest for 26.1 / 26.1.2 / 26.2 has only `client` and `server`, where 1.21.1 also had
+//     `client_mappings` and `server_mappings`. `loom.officialMojangMappings()` therefore fails
+//     with "Failed to find official mojang mappings for 26.1.2"; it is not a bug to work around,
+//     the file it wants no longer exists.
+//   * The plugin id changed: `fabric-loom` -> `net.fabricmc.fabric-loom`. The new plugin does not
+//     remap Minecraft or mods, because there is nothing left to remap.
+//   * Dependencies are plain `implementation`, NOT `modImplementation`, for the same reason.
+//
+// The good news for this project: the names the game now ships with ARE Mojang's own, and every
+// project here was already written against official Mojang mappings. The shared engine is
+// therefore reading the same names it always did - the porting work is real API churn across the
+// ~11 releases from 1.21.1 (1.21.2 ... 1.21.11, then 26.1), not a mappings migration.
+// ============================================================================================
+//
+// TOOLCHAIN (26.1 raised Java, Gradle and Loom together - none of the other projects' commands
+// work here):
+//   net.fabricmc.fabric-loom ...... 1.16.3   (1.15 is the minimum that knows 26.1; the 1.17 line
+//                                    demands Gradle 9.5, so bumping Loom means bumping Gradle)
+//   Minecraft ..................... 26.1.2   (year.drop.hotfix; 26.1 followed 1.21.11)
+//   fabric-loader ................. 0.19.3
+//   fabric-api .................... 0.155.2+26.1.2
+//   fabric-language-kotlin ........ 1.13.13+kotlin.2.4.10
+//   Kotlin Gradle plugin .......... 2.4.10   (MUST match the Kotlin FLK bundles - same
+//                                    metadata-mismatch rule that has always applied here)
+//   JAVA .......................... 25, and it applies to the GRADLE JVM ITSELF, not just the
+//                                    compile target, so Gradle must be LAUNCHED on 25 -
+//                                    toolchain auto-provisioning cannot paper over it.
+//   Gradle ........................ 9.4.0
+
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.16.3'
+    id 'org.jetbrains.kotlin.jvm' version '2.4.10'
+    id 'java'
+}
+
+group = 'com.heledron'
+version = '1.8.4'
+
+base {
+    archivesName = 'arachnomod_fabric_26.1.2'
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+loom {
+    accessWidenerPath = file('src/main/resources/arachnomod.accesswidener')
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:26.1.2'
+    // NO mappings line: see the header. The game is unobfuscated from 26.1 onward.
+
+    implementation 'net.fabricmc:fabric-loader:0.19.3'
+    implementation 'net.fabricmc.fabric-api:fabric-api:0.155.2+26.1.2'
+    implementation 'net.fabricmc:fabric-language-kotlin:1.13.13+kotlin.2.4.10'
+
+    implementation 'com.electronwill.night-config:core:3.6.7'
+    implementation 'com.electronwill.night-config:toml:3.6.7'
+    include 'com.electronwill.night-config:core:3.6.7'
+    include 'com.electronwill.night-config:toml:3.6.7'
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version
+    }
+}

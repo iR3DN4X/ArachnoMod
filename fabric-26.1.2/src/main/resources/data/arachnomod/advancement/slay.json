@@ -1,0 +1,16 @@
+{
+  "parent": "arachnomod:encounter",
+  "display": {
+    "icon": { "id": "minecraft:diamond_sword" },
+    "title": "Eight Legs Later",
+    "description": "Kill an Octoarachnopod. That buys you two Minecraft days of quiet. Spend them well.",
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "impossible": { "trigger": "minecraft:impossible" }
+  },
+  "requirements": [ [ "impossible" ] ]
+}

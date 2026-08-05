@@ -30,23 +30,34 @@ Kotlin engine sources.
 
 | Folder | Loader | Minecraft | Java | Toolchain |
 |---|---|---|---|---|
+| [`fabric-26.1.2/`](fabric-26.1.2/) | Fabric (Quilt Loader runs this jar too) | 26.1.2 | 25 | Loom 1.16.3, Gradle 9.4 |
+| [`neoforge-26.1.2/`](neoforge-26.1.2/) | NeoForge 26.1.2.94 | 26.1.2 | 25 | ModDevGradle 2.0.143, Gradle 9.4 |
 | [`fabric-1.21.1/`](fabric-1.21.1/) | Fabric | 1.21.1 | 21 | Fabric Loom, Mojang mappings |
 | [`neoforge-1.21.1/`](neoforge-1.21.1/) | NeoForge | 1.21.1 | 21 | ModDevGradle |
 | [`forge-1.20.1/`](forge-1.20.1/) | Forge (loads on NeoForge 1.20.1 too) | 1.20.1 | 17 | ForgeGradle 6, official mappings |
 | [`fabric-1.20.1/`](fabric-1.20.1/) | Fabric | 1.20.1 | 17 | Fabric Loom, Mojang mappings |
 
+**On the 26.x builds:** Minecraft 26.1 is the first *unobfuscated* release, so those two projects carry no mappings declaration at all, use the `net.fabricmc.fabric-loom` / ModDevGradle plugins without remapping, and require **Java 25 — including for the Gradle JVM itself**. There is no Forge build for 26.x because MinecraftForge has not released one; Quilt needs no separate build because Quilt Loader runs the Fabric jar (Quilt's own standard libraries were discontinued in December 2025).
+
 ## Building
 
-Each project builds independently with Gradle (no wrapper script is committed; use Gradle
-8.10.2 for the 1.21.1 projects, 8.8 for 1.20.1):
+Each project builds independently with Gradle (no wrapper script is committed). **The Gradle and
+JDK versions differ per target and are not interchangeable** — Gradle 9.4 for the 26.x projects,
+8.10.2 for 1.21.1, 8.8 for 1.20.1:
 
 ```
 # from the repo root — pick the project you want
-gradle -p fabric-1.21.1   build   # requires JDK 21
-gradle -p neoforge-1.21.1 build   # requires JDK 21
-gradle -p forge-1.20.1    build   # requires JDK 17
-gradle -p fabric-1.20.1   build   # requires JDK 17
+gradle -p fabric-26.1.2   build   # requires JDK 25 + Gradle 9.4
+gradle -p neoforge-26.1.2 build   # requires JDK 25 + Gradle 9.4
+gradle -p fabric-1.21.1   build   # requires JDK 21 + Gradle 8.10.2
+gradle -p neoforge-1.21.1 build   # requires JDK 21 + Gradle 8.10.2
+gradle -p forge-1.20.1    build   # requires JDK 17 + Gradle 8.8
+gradle -p fabric-1.20.1   build   # requires JDK 17 + Gradle 8.8
 ```
+
+For the 26.x projects Gradle itself must be *launched* on JDK 25 — a toolchain declaration alone
+is not enough. Using the wrong JDK on the 1.20.1 projects fails confusingly, with ForgeGradle
+reporting `Start.java cannot find Main` rather than anything about Java versions.
 
 Jars land in each project's `build/libs/`. `runClient` in any project starts a dev client.
 
