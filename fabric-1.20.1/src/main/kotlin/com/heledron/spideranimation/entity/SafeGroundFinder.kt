@@ -281,10 +281,60 @@ object SafeGroundFinder {
      * PREY is standing", which is a fact about the world — the spider needs it precisely WHEN it
      * is far too big for the answer, so gating it on the spider's own height would mean a giant
      * could never learn it has to shrink to follow you into a corridor.
+     *
+     * It deliberately does NOT go through [readSpace] either. That one abandons the reading unless
+     * there are walls IMMEDIATELY beside the point, because confinementAt needs them to work out a
+     * lane to hold the body on. roomAt never uses a lane - it returns headroom and nothing else -
+     * and the commonest place a player takes shelter, the middle of a room, has a ceiling and no
+     * adjacent walls whatsoever. Requiring them made every ordinary building invisible here: the
+     * cap never applied, so the spider came at a sheltering player at full size, stepped onto the
+     * roof because that is where a body that big can put its feet, and parked there permanently.
      */
     fun roomAt(level: ServerLevel, x: Double, groundY: Double, z: Double): Double? {
-        val r = readSpace(level, x, groundY, z) ?: return null
-        return if (r.roofed) r.headroom else null
+        val bx = floor(x).toInt()
+        val bz = floor(z).toInt()
+        if (!level.hasChunk(bx shr 4, bz shr 4)) return null
+
+        // Same floor hunt as readSpace: anchored at the GROUND PLANE, never a body centre.
+        val startY = floor(groundY + 0.5).toInt()
+        var floorTop = Double.NaN
+        for (dy in 0 downTo -4) {
+            if (isBodyBlocking(level, bx, startY + dy, bz)) { floorTop = (startY + dy + 1).toDouble(); break }
+        }
+        if (floorTop.isNaN()) return null
+        val offGround = groundY - floorTop
+        if (offGround > 1.5 || offGround < -1.5) return null
+
+        val feetY = floorTop.toInt()
+        var headroom = Double.MAX_VALUE
+        for (dy in 0..CEILING_SEARCH) {
+            if (isBodyBlocking(level, bx, feetY + dy, bz)) { headroom = dy.toDouble(); break }
+        }
+        // Zero is not a ceiling, it means the sampled column is solid at foot level.
+        if (headroom == Double.MAX_VALUE || headroom < 1.0) return null
+
+        // A ceiling ALONE is not shelter. A leaf canopy over open ground is a ceiling too, and
+        // treating that as a room is exactly the reading that produced the bouncing giant. Require
+        // the space to be genuinely ENCLOSED - bounded on both sides of at least one axis within
+        // INTERIOR_WALL_SEARCH blocks. True of any room, tunnel or cave mouth; false of open
+        // terrain under a tree.
+        if (!boundedOnSomeAxis(level, bx, feetY, bz)) return null
+        return headroom
+    }
+
+    /** How far sideways to look for the walls that make a roofed space an interior. */
+    private const val INTERIOR_WALL_SEARCH = 8
+
+    /** How far up to look for a ceiling. Shared with [readSpace] so the two never drift apart. */
+    private const val CEILING_SEARCH = 4
+
+    private fun boundedOnSomeAxis(level: ServerLevel, bx: Int, feetY: Int, bz: Int): Boolean {
+        fun bounded(dx: Int, dz: Int): Boolean {
+            for (d in 1..INTERIOR_WALL_SEARCH)
+                if (isBodyBlocking(level, bx + dx * d, feetY, bz + dz * d)) return true
+            return false
+        }
+        return (bounded(1, 0) && bounded(-1, 0)) || (bounded(0, 1) && bounded(0, -1))
     }
 
     /** The raw geometry of the space at a point: the floor, the walls beside it, the ceiling. */
@@ -329,7 +379,7 @@ object SafeGroundFinder {
         // Headroom decides whether the height has to be pinned: the collision step casts from a
         // block ABOVE the body, so a ceiling that close would "hit" and teleport it upward.
         var headroom = Double.MAX_VALUE
-        for (dy in 0..4) {
+        for (dy in 0..CEILING_SEARCH) {
             if (isBodyBlocking(level, bx, feetY + dy, bz)) { headroom = dy.toDouble(); break }
         }
         // A "ceiling" of ZERO is not a ceiling. dy starts at the block the feet are IN, so

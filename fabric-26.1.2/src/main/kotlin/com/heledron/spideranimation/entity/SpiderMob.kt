@@ -450,7 +450,20 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // walkable, so the pathfinder never engages its threading — the spider just walked up
         // at full size and climbed the hillside instead of coming in. Sizing to fit where the
         // prey is standing makes it able to follow them in regardless of what the AI decided.
-        if (!squeezing && nearest != null && horizontalDistance < 14.0) {
+        // THE LEAD DISTANCE MUST SCALE WITH SIZE. This used to be a flat 14 blocks, and that is
+        // why a spider coming from range walked straight over the top of a building instead of
+        // going in: the shrink is not instant, and a big spider is also a FAST spider, so by the
+        // time it was allowed to start it was already standing on the roof. Measured on a real
+        // sealed room: approaching at scale ~14 the shrink takes tens of ticks, during which the
+        // body covers far more than 14 blocks.
+        //
+        // Both terms of that problem are proportional to the body's size (how much shrinking is
+        // needed, and how fast it closes), so the warning distance is too. Small spiders keep
+        // essentially the old behaviour; only the giants - the ones that actually climb - get the
+        // early notice. Outdoors this changes nothing at all: roomAt returns null unless the prey
+        // is genuinely in an enclosed, roofed space, so the towering approach is untouched.
+        val fitLeadDistance = 14.0 + 6.0 * currentScale
+        if (!squeezing && nearest != null && horizontalDistance < fitLeadDistance) {
             // roomAt, not confinementAt: a fact about where the prey stands, not about this
             // body. Gating it on the spider's own height would mean a giant never learns it has
             // to shrink to follow you in - which is exactly when it needs to.
@@ -514,9 +527,10 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     }
 
     /**
-     * Horse-like steering: the rider looks where they want to go and holds forward (W). The rider's
-     * forward impulse (zza) is synced to the server by the vanilla ride-input packet. We drive the
-     * ECS behaviour directly and flag the body as manually controlled so the "chase the nearest
+     * Horse-like steering: the rider looks where they want to go and presses the movement keys.
+     * Those arrive from the vanilla ride-input packet as an `Input` record on the ServerPlayer
+     * (see the note in the body — this is the 26.1 change that broke riding). We drive the ECS
+     * behaviour directly and flag the body as manually controlled so the "chase the nearest
      * player" system leaves it alone (the nearest player is, after all, sitting on it).
      */
     private fun tickRidden(body: SpiderBody, rider: Player) {
@@ -528,13 +542,34 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         body.setSpeedScale(scaleToSpeedFactor(riddenSize))
 
         val entity = ecsEntity ?: return
-        if (rider.zza > 0f) {
+
+        // 26.1: A RIDER'S KEYS NO LONGER ARRIVE AS zza/xxa. ServerboundPlayerInputPacket used to
+        // carry the movement floats and the server handler wrote them onto the player; it now
+        // carries an Input record and the handler ONLY stores it (setLastClientInput) - nothing
+        // populates player.zza server-side any more. The old `rider.zza > 0f` test was therefore
+        // permanently false, which is why the spider could be mounted but never driven.
+        val input = (rider as? ServerPlayer)?.lastClientInput
+        val forward = (if (input?.forward() == true) 1.0 else 0.0) -
+                      (if (input?.backward() == true) 1.0 else 0.0)
+        val strafe = (if (input?.left() == true) 1.0 else 0.0) -
+                     (if (input?.right() == true) 1.0 else 0.0)
+
+        if (forward != 0.0 || strafe != 0.0) {
             val look = rider.lookAngle
-            val dir = Vector3d(look.x, 0.0, look.z)
-            if (dir.lengthSquared() > 1.0e-6) {
-                dir.normalize()
-                entity.replaceComponent<SpiderBehaviour>(DirectionBehaviour(dir, Vector3d(dir)))
-                return
+            val fwd = Vector3d(look.x, 0.0, look.z)
+            if (fwd.lengthSquared() > 1.0e-6) {
+                fwd.normalize()
+                // Left of the look direction on the horizontal plane: facing south (+Z), left is
+                // east (+X). The Input record gives us all four keys, so the mount strafes and
+                // backs up as well as walking forward - it always steers by where the rider looks.
+                val left = Vector3d(fwd.z, 0.0, -fwd.x)
+                val dir = Vector3d(fwd).mul(forward).add(left.mul(strafe))
+                if (dir.lengthSquared() > 1.0e-6) {
+                    dir.normalize()
+                    // Face where the rider looks; travel where they asked.
+                    entity.replaceComponent<SpiderBehaviour>(DirectionBehaviour(Vector3d(fwd), dir))
+                    return
+                }
             }
         }
         entity.replaceComponent<SpiderBehaviour>(StayStillBehaviour())
@@ -630,11 +665,17 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         if (trophyRolled) return
         trophyRolled = true
 
-        // ADVANCEMENTS: the kill, and the boss kill. lastHurtByPlayer is vanilla's own kill
-        // attribution (it holds the reference for 100 ticks), so this credits exactly who the
-        // game would credit. It lives in rollTrophy deliberately: that is the one funnel proven
-        // to fire on every real death and never on a despawn, chunk unload or dimension follow.
-        (lastHurtByPlayer as? ServerPlayer)?.let { killer ->
+        // ADVANCEMENTS: the kill, and the boss kill. This is vanilla's own kill attribution (it
+        // holds the reference for 100 ticks), so it credits exactly who the game would credit.
+        // It lives in rollTrophy deliberately: that is the one funnel proven to fire on every
+        // real death and never on a despawn, chunk unload or dimension follow.
+        //
+        // 26.1: the `lastHurtByPlayer` FIELD is no longer a Player - it is an
+        // EntityReference<Player>, and it is protected, so Kotlin resolves the bare name to the
+        // field rather than to the getter. `field as? ServerPlayer` therefore compiles happily
+        // and is ALWAYS null, which silently made both of these advancements unobtainable.
+        // Call the accessor explicitly: it resolves the reference and returns the real Player.
+        (getLastHurtByPlayer() as? ServerPlayer)?.let { killer ->
             killer.grantAdvancement(Advancements.SLAY)
             if (enraged) killer.grantAdvancement(Advancements.SLAY_BOSS)
         }
