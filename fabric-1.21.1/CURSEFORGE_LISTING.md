@@ -83,13 +83,13 @@ All under `/spider`:
 | <code>/spider release</code> |Dismisses your personal spider.                                                                               |Anyone                   |
 | <code>/spider chasedistance &lt;blocks&gt;</code> |Sets how far (8–256) the <strong>wild</strong> spider spots and chases players. <strong>Saves into the config file.</strong> |Ops (permission level 2) |
 | <code>/spider config &lt;key&gt; get</code> |Shows any config value in chat.                                                                               |Ops (permission level 2) |
-| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 58 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
+| <code>/spider config &lt;key&gt; set &lt;value&gt;</code> |<strong>Live-edits ANY of the 65 config values in-game</strong> — typed, range-checked arguments with full tab-completion (sound keys tab-complete against every sound in the game). Applies to the active spider instantly and saves straight into the config file. |Ops (permission level 2) |
 
 ***
 
 ## ⚙️ Configuration
 
-All tunables live in **`config/arachnomod-common.toml`**, created on first launch. It's **fully commented** and **hot-reloads** — edit the file and most changes apply to a running world within moments, no restart needed. (Spawn/gait values are read when a spider spawns, so let the current one respawn to apply those.) Every key is also live-editable in-game with `/spider config <key> set <value>`.
+All tunables live in **`config/arachnomod-common.toml`**, created on first launch. It's **fully commented** and **hot-reloads** — edit the file and most changes apply to a running world within moments, no restart needed. (Spawn/gait values are read when a spider spawns, so let the current one respawn to apply those.) Every key is also live-editable in-game with `/spider config &lt;key&gt; set &lt;value&gt;`.
 
 **Spawning**
 
@@ -104,6 +104,8 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>spawnDistanceMax</code> |34.0    |Farthest a spider naturally spawns from a player (blocks)                   |
 | <code>spawnAngleAttempts</code> |24      |Directions tested per candidate distance when hunting safe spawn ground     |
 | <code>spawnMaxVerticalSearch</code> |48      |How deep below the heightmap to look for solid ground (SkyBlock-friendly)   |
+| <code>spawnCloseFallbackDistance</code> |6.0     |SKYBLOCK LAST RESORT: if nothing at/beyond <code>spawnDistanceMin</code> is solid, sweep inward to this distance (0 = off, keep the strict minimum) |
+| <code>relocateDistanceBlocks</code> |192.0   |If the spider ends up this far from every player while its chunk is still loaded, it relocates back near one (0 = off) |
 | <code>camoVariantChance</code> |0.25    |Chance a spawned spider is the CAMO variant (natural spawns AND spawn eggs) |
 | <code>poisonVariantChance</code> |0.2     |Chance a spawned spider is the POISON variant (rolled before the camo chance) |
 | <code>hunterVariantChance</code> |0.15    |Chance a spawned spider is the pitch-black HUNTER variant (rolled first)    |
@@ -149,6 +151,7 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | <code>shrinkPercentPerTick</code> |25.0    |Fastest it can shrink (%/tick)                                                                                          |
 | <code>riddenSize</code> |2.0     |Stable size while a player is riding it                                                                                 |
 | <code>hunterSize</code> |1.1     |The HUNTER's FIXED size — it never grows or shrinks (1.1 = a head taller than a player; fits doorways as-is)            |
+| <code>poisonSize</code> |1.0     |The POISON variant's FIXED size — roughly player height. It never grows or shrinks with distance (0.3–5.0)              |
 | <code>growInWater</code> |true    |In water, grow just big enough to ride above the surface instead of drowning (false = deep water stays a drowning trap) |
 
 **Combat & drops**
@@ -156,6 +159,10 @@ All tunables live in **`config/arachnomod-common.toml`**, created on first launc
 | Key                 |Default |Meaning                                   |
 | ------------------- |------- |----------------------------------------- |
 | <code>netheriteMaxHealth</code> |350.0   |Max health of the netherite variant (it also wears full netherite-suit armor stats) |
+| <code>netheriteArmor</code> |20.0    |The netherite variant's armor points (20 = a full netherite suit). <strong>Set to 0 for an unarmoured 350 HP target</strong> (0–30) |
+| <code>netheriteArmorToughness</code> |12.0    |Its armor toughness (12 = a full netherite suit) — this is what blunts heavy hits (0–20) |
+| <code>netheriteKnockbackResistance</code> |0.4     |Its knockback resistance, 0–1 (a netherite suit is 0.1 per piece) |
+| <code>netheriteLegs</code> |8       |How many legs the netherite spider has (1–16; 8 is the classic octopod). 1–2 drag and flail; 4+ stride properly |
 | <code>camoMaxHealth</code> |600.0   |Max health of the camo variant (no armor) |
 | <code>poisonMaxHealth</code> |500.0   |Max health of the poison variant (no armor — its danger is the bite) |
 | <code>hunterMaxHealth</code> |400.0   |Max health of the hunter variant (no armor — it was never supposed to be seen) |
@@ -211,7 +218,7 @@ Fabric:
 ## 📜 Full changelog
 
 ### v1.8.4 (latest) — now on SIX builds
-- **RIDE IT IN ANY DIRECTION.** 🕷️ Steering a tamed spider used to be one key: hold W and it walked wherever you were looking. Now **all four movement keys work** — W and S drive forward and back along your line of sight, A and D strafe across it, and the spider keeps facing wherever you look while it moves. Sidestep along a ledge, back out of a tunnel, circle a target without ever turning away from it. On the 1.20.1 and 1.21.1 builds the impulses are read as analog values, so a **controller's stick works at partial deflection** too.
+- **RIDE IT IN ANY DIRECTION.** 🕷️ Steering a tamed spider used to be one key: hold W and it walked wherever you were looking. Now **all four movement keys work** — W and S drive forward and back along your line of sight, A and D strafe across it, and the spider keeps facing wherever you look while it moves. Sidestep along a ledge, back out of a tunnel, circle a target without ever turning away from it. On the 1.20.1 and 1.21.1 builds the movement impulses are read at their full precision rather than as simple on/off, so partial input carries through at its actual strength.
 - **IT COMES IN THROUGH THE DOOR NOW, INSTEAD OF SITTING ON YOUR ROOF.** 🏠 If you sheltered inside a building, the spider would walk up at full size, step onto the roof — the only surface a body that big can stand on — and camp there directly above you, forever. Two things were wrong:
   - **The spider couldn't tell that a room was a room.** Its "how much space is where my prey is standing" check demanded walls immediately either side of you, which is true in a corridor and false in the middle of any ordinary room. So every building read as open ground and it never learned it had to shrink to get in.
   - **It was told to shrink far too late.** The warning distance was a flat 14 blocks, but a big spider is also a *fast* spider and covers far more than that while it's shrinking — it was already standing on your roof before it started. The distance now scales with how big it currently is.
