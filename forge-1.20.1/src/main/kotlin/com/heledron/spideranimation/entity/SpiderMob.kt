@@ -410,16 +410,25 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // column over its floor), not on "is the mob in water" — a grown body above the surface
         // is no longer in water, which would shrink, dunk and regrow it in an endless bob. The
         // squeeze still outranks it: it's the active kill move, and brief.
+        // NO-GROW MODE (enableGrowth = false): every variant holds ONE size, fixedSizeBlocks tall.
+        val sizeGrowth = Config.ENABLE_GROWTH.get()
         val waterScale =
-            if (!squeezing && variant != SpiderVariant.HUNTER && Config.GROW_IN_WATER.get())
+            if (sizeGrowth && !squeezing && variant != SpiderVariant.HUNTER && Config.GROW_IN_WATER.get())
                 waterGrowthScale(level, body)
             else null
         var targetScale = when {
             // THE HUNTER never changes size: fixed at hunterSize whatever the distance, water
             // depth, or opening ahead (it fits doorways at that size; holes are walls to it —
             // deep water is its one weakness, since it will not grow above the surface).
-            variant == SpiderVariant.HUNTER -> Config.HUNTER_SIZE.get()
-            squeezing -> Config.SQUEEZE_SIZE.get()
+            variant == SpiderVariant.HUNTER -> if (sizeGrowth) Config.HUNTER_SIZE.get() else fixedSizeScale()
+            // The squeeze may only ever SHRINK a fixed-size spider, never enlarge a small one.
+            squeezing ->
+                if (sizeGrowth) Config.SQUEEZE_SIZE.get()
+                else minOf(Config.SQUEEZE_SIZE.get(), fixedSizeScale())
+            // Fixed size for everything else: no distance growth, no water growth, and the
+            // poison variant's own poisonSize gives way to the shared fixedSizeBlocks as well.
+            // The doorway, crawl-hole and headroom caps below still apply - they only shrink.
+            !sizeGrowth -> fixedSizeScale()
             // THE POISON variant holds ONE size too. Distance-based sizing made it swell and
             // shrink as the player moved around, and because body height scales with size that
             // showed up in-game as the spider BOBBING UP AND DOWN on the spot - worst near
@@ -499,28 +508,36 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
                 if (!player.isAlive) continue
                 val distSqr = player.distanceToSqr(body.position.x, body.position.y, body.position.z)
                 if (distSqr > blindRange * blindRange) continue
+                if (WardRegistry.isSafe(level, player.x, player.z)) continue   // sheltering past a warding idol
                 player.addEffect(MobEffectInstance(MobEffects.BLINDNESS, blindTicks, 0), this)
                 blinded = true
             }
             if (blinded) blindnessCooldown = BLINDNESS_REFRESH_TICKS
         }
-        if (!tamed && hunting && nearest != null && nearest.isAlive) {
+        // Its quarry is the nearest player it can actually REACH: anyone sheltering more than the
+        // bite band inside a warding idol is out of bounds, however close they stand. The enraged boss
+        // ignores idols: it bites whoever is nearest.
+        val prey = if (enraged || nearest == null || !WardRegistry.isSafe(level, nearest.x, nearest.z)) nearest
+            else level.players().filter { !WardRegistry.isSafe(level, it.x, it.z) }.minByOrNull {
+                it.distanceToSqr(body.position.x, body.position.y, body.position.z)
+            }
+        if (!tamed && hunting && prey != null && prey.isAlive) {
             val reach = ATTACK_REACH * currentScale.coerceAtMost(REACH_SCALE_CAP)
-            val distSqr = nearest.distanceToSqr(body.position.x, body.position.y, body.position.z)
+            val distSqr = prey.distanceToSqr(body.position.x, body.position.y, body.position.z)
             if (variant == SpiderVariant.POISON) {
                 val lungeRange = reach * LUNGE_RANGE_FACTOR
                 if (attackCooldown == 0 && !body.isLunging && distSqr <= lungeRange * lungeRange) {
-                    body.beginLunge(Vector3d(nearest.x - body.position.x, 0.0, nearest.z - body.position.z))
+                    body.beginLunge(Vector3d(prey.x - body.position.x, 0.0, prey.z - body.position.z))
                     attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()   // recovery starts at the leap
                 }
                 if (body.isLungeStriking && distSqr <= reach * reach) {
-                    nearest.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
-                    nearest.addEffect(MobEffectInstance(MobEffects.POISON,
+                    prey.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
+                    prey.addEffect(MobEffectInstance(MobEffects.POISON,
                         (Config.POISON_EFFECT_SECONDS.get() * 20.0).toInt(), 1), this)
                     body.endLunge()   // bite landed — end the strike, so one lunge = one bite
                 }
             } else if (attackCooldown == 0 && distSqr <= reach * reach) {
-                nearest.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
+                prey.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
                 attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()
             }
         }
@@ -537,7 +554,8 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     private fun tickRidden(body: SpiderBody, rider: Player) {
         body.manualControl = true
 
-        val riddenSize = Config.RIDDEN_SIZE.get()
+        // With enableGrowth off the mount keeps the one fixed size too; riddenSize is ignored.
+        val riddenSize = if (Config.ENABLE_GROWTH.get()) Config.RIDDEN_SIZE.get() else fixedSizeScale()
         currentScale = approachScale(currentScale, riddenSize)
         body.setSizeScale(currentScale)
         body.setSpeedScale(scaleToSpeedFactor(riddenSize))
@@ -586,6 +604,16 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         variant == SpiderVariant.HUNTER -> Config.HUNTER_ATTACK_DAMAGE_HEARTS.get()
         else -> Config.NETHERITE_ATTACK_DAMAGE_HEARTS.get()
     }
+
+    /**
+     * The sizeScale at which the spider stands [Config.FIXED_SIZE_BLOCKS] tall. Standing height
+     * is exactly linear in sizeScale - measured on a flat floor at scales 1 and 2 (2026-09-10):
+     * the top of the leg geometry sits 2.64 blocks up per unit of scale, thickest leg beam
+     * included, on the octopod body camo/poison/hunter share and within 0.4% on the 8-legged
+     * netherite body. The body CENTRE is only 1.1 per unit - the knees rise well above it, which
+     * is why a headroom-style estimate would make a "2-block" spider over 3 blocks tall.
+     */
+    private fun fixedSizeScale(): Double = Config.FIXED_SIZE_BLOCKS.get() / 2.64
 
     private fun distanceToScale(distance: Double): Double {
         val near = Config.SIZE_NEAR_DISTANCE.get()

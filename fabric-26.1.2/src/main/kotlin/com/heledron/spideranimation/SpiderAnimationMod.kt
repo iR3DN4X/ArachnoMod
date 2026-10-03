@@ -3,9 +3,16 @@ package com.heledron.spideranimation
 import com.heledron.spideranimation.ecs.Ecs
 import com.heledron.spideranimation.ecs.EcsEntity
 import com.heledron.spideranimation.entity.GroundCamo
+import com.heledron.spideranimation.entity.ConfigBook
+import com.heledron.spideranimation.entity.ConfigBookItem
+import com.heledron.spideranimation.entity.ConfigBookNet
+import com.heledron.spideranimation.entity.LaserPointerItem
 import com.heledron.spideranimation.entity.SpiderAI
+import com.heledron.spideranimation.entity.SpiderDebug
 import com.heledron.spideranimation.entity.SpiderMob
 import com.heledron.spideranimation.entity.SpiderSpawnManager
+import com.heledron.spideranimation.entity.WardBlock
+import com.heledron.spideranimation.entity.WardRegistry
 import com.heledron.spideranimation.platform.DisplayTracker
 import com.heledron.spideranimation.platform.playSoundAt
 import com.heledron.spideranimation.platform.removeOrphanDisplays
@@ -14,13 +21,16 @@ import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.arguments.DoubleArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
+import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.suggestion.SuggestionProvider
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents
+import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab
 import net.fabricmc.fabric.api.`object`.builder.v1.entity.FabricDefaultAttributeRegistry
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.commands.CommandSourceStack
@@ -41,8 +51,14 @@ import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.MobCategory
+import net.minecraft.world.item.BlockItem
+import net.minecraft.world.item.CreativeModeTab
 import net.minecraft.world.item.CreativeModeTabs
+import net.minecraft.world.level.block.Block
+import net.minecraft.world.level.block.SoundType
+import net.minecraft.world.level.block.state.BlockBehaviour
 import net.minecraft.world.item.Item
+import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.SpawnEggItem
 import org.joml.Vector3d
 import java.util.UUID
@@ -86,9 +102,64 @@ object SpiderAnimationMod : ModInitializer {
         Item(Item.Properties().setId(itemKey("spider_tamer")).stacksTo(1))
     )
 
+    /** The WARDING IDOL: placed, it stops players near it anchoring a spider spawn. See WardRegistry. */
+    val WARDING_IDOL: Block = Registry.register(
+        BuiltInRegistries.BLOCK, id("warding_idol"),
+        WardBlock(BlockBehaviour.Properties.of()
+            .setId(ResourceKey.create(Registries.BLOCK, id("warding_idol")))   // 26.1: ids are explicit
+            .strength(3.0f, 12.0f)          // pickaxe work, and it shrugs off a creeper
+            .requiresCorrectToolForDrops()
+            .lightLevel { 7 }               // eyes glow like a redstone torch (light 7), same on every build
+            .sound(SoundType.DEEPSLATE))
+    )
+
+    val WARDING_IDOL_ITEM: Item = Registry.register(
+        BuiltInRegistries.ITEM, id("warding_idol"),
+        BlockItem(WARDING_IDOL, Item.Properties().setId(itemKey("warding_idol")))
+    )
+
+    /** Creative-only (no recipe): right-click to shine the dot and the spider chases it. */
+    val SPIDER_LASER_POINTER: Item = Registry.register(
+        BuiltInRegistries.ITEM, id("spider_laser_pointer"),
+        LaserPointerItem(Item.Properties().setId(itemKey("spider_laser_pointer")).stacksTo(1))
+    )
+
+    /** Right-click for the in-game settings screen (see ConfigBook). Given on first join. */
+    val SPIDER_CONFIG_BOOK: Item = Registry.register(
+        BuiltInRegistries.ITEM, id("spider_config_book"),
+        ConfigBookItem(Item.Properties().setId(itemKey("spider_config_book")).stacksTo(1))
+    )
+
+    // THE MOD'S OWN CREATIVE TAB: everything it adds, in one place. Each item is ALSO still
+    // listed in the vanilla tab it belongs to (spawn eggs, tools, functional blocks).
+    val CREATIVE_TAB: CreativeModeTab = Registry.register(
+        BuiltInRegistries.CREATIVE_MODE_TAB, id("arachnomod"),
+        FabricCreativeModeTab.builder()
+            .title(Component.translatable("itemGroup.arachnomod"))
+            .icon { ItemStack(SPIDER_SPAWN_EGG) }
+            .displayItems { _, output ->
+                output.accept(SPIDER_SPAWN_EGG)
+                output.accept(WARDING_IDOL_ITEM)
+                output.accept(SPIDER_TAMER)
+                output.accept(SPIDER_LASER_POINTER)
+                output.accept(SPIDER_CONFIG_BOOK)
+            }
+            .build()
+    )
+
     override fun onInitialize() {
         // All gameplay tunables live in config/arachnomod-common.toml (see Config).
         Config.init(FabricLoader.getInstance().configDir)
+
+        // The registry never touches the block handle itself: it is a plain Block here and a
+        // deferred holder needing .get() on NeoForge/Forge, and that difference has silently
+        // broken copied code before.
+        WardRegistry.isWardBlock = { state -> state.block === WARDING_IDOL }
+
+        // The config book: its item, its two packets, and one for each new player who may use it.
+        ConfigBook.bookItem = { SPIDER_CONFIG_BOOK }
+        ConfigBookNet.register()
+        ServerPlayConnectionEvents.JOIN.register { handler, _, _ -> ConfigBook.onJoin(handler.player) }
 
         FabricDefaultAttributeRegistry.register(SPIDER_ENTITY, SpiderMob.createAttributes().build())
 
@@ -100,6 +171,11 @@ object SpiderAnimationMod : ModInitializer {
         }
         CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.TOOLS_AND_UTILITIES).register { output ->
             output.accept(SPIDER_TAMER)
+            output.accept(SPIDER_LASER_POINTER)
+            output.accept(SPIDER_CONFIG_BOOK)
+        }
+        CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.FUNCTIONAL_BLOCKS).register { output ->
+            output.accept(WARDING_IDOL_ITEM)
         }
 
         ServerTickEvents.END_SERVER_TICK.register { server -> onServerTick(server) }
@@ -107,6 +183,7 @@ object SpiderAnimationMod : ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register {
             AppState.removeAllBodies()
             SpiderSpawnManager.reset()
+            WardRegistry.reset()
         }
 
         AppState.setup()
@@ -243,7 +320,10 @@ object AppState {
 
         // Render.
         ecs.onRender {
-            for (spider in ecs.query<SpiderBody>()) renderSpider(spider).submit(spider)
+            for (spider in ecs.query<SpiderBody>()) {
+                renderSpider(spider).submit(spider)
+                if (SpiderDebug.enabled) renderSpiderDebug(spider).submit(spider to "debug")
+            }
         }
 
         ecs.start()
@@ -343,6 +423,20 @@ private fun registerCommands(dispatcher: CommandDispatcher<CommandSourceStack>) 
                             1
                         }
                     }))
+            // The settings screen, without needing the book (read-only for non-operators).
+            .then(Commands.literal("menu")
+                .executes { ctx -> ConfigBook.open(ctx.source.playerOrException); 1 })
+            .then(Commands.literal("debug")
+                .requires { it.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER) }
+                .executes { ctx ->
+                    SpiderDebug.enabled = !SpiderDebug.enabled
+                    val msg =
+                        if (SpiderDebug.enabled)
+                            SpiderDebug.LEGEND
+                        else "Spider debug view OFF."
+                    ctx.source.sendSuccess({ Component.literal(msg) }, false)
+                    1
+                })
             .then(Commands.literal("release")
                 .executes { ctx ->
                     if (AppState.releaseSpider(ctx.source.playerOrException)) {
@@ -417,6 +511,14 @@ private fun buildConfigSubtree(): com.mojang.brigadier.builder.LiteralArgumentBu
                 Commands.argument("value", IdentifierArgument.id())
                     .suggests(soundSuggestions)
                     .executes { ctx -> entry.set(IdentifierArgument.getId(ctx, "value").toString()); feedback(ctx) }
+            is Config.StringValue ->
+                // greedyString so a whole comma-separated list can be typed, spaces and all.
+                Commands.argument("value", StringArgumentType.greedyString())
+                    .executes { ctx ->
+                        entry.set(SpiderSpawnManager.normalizeDimensionInput(
+                            StringArgumentType.getString(ctx, "value")))
+                        feedback(ctx)
+                    }
             else -> continue
         }
 

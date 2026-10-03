@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.sounds.SoundEvent
 import net.minecraft.sounds.SoundSource
+import net.minecraft.util.Brightness
 import net.minecraft.world.entity.Display
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.level.ClipContext
@@ -23,6 +24,9 @@ import kotlin.math.floor
 // Bukkit display entities; here we use net.minecraft ClipContext + Display.BlockDisplay.
 
 // ---- World queries -------------------------------------------------------------------------
+
+/** This dimension's registry id, e.g. "minecraft:overworld" - what spawnDimensions matches on. */
+fun ServerLevel.dimensionId(): String = this.dimension().identifier().toString()
 
 /** Ray-cast against block collision shapes (fluids ignored), returning the hit point or null. */
 fun ServerLevel.raycastGround(start: Vector3d, direction: Vector3d, maxDistance: Double): Vector3d? {
@@ -97,6 +101,10 @@ class RenderBlockDisplay(
     private val velocity: Vector3d,
     private val block: BlockState,
     private val matrix: Matrix4f,
+    // Optional full-bright override (the debug view's parts, like the original's Display.Brightness(15, 15)).
+    private val brightness: Brightness? = null,
+    // false = snap to each new transform instead of lerping over a tick (the debug view's support polygon).
+    private val interpolate: Boolean = true,
 ) : RenderItem {
     override fun submit(handle: Any) {
         var display = DisplayTracker.get(handle)
@@ -151,11 +159,12 @@ class RenderBlockDisplay(
         val dz = (position.z - display.z).toFloat()
 
         display.setBlockState(block)
+        if (brightness != null) display.setBrightnessOverride(brightness)
         display.setTransformation(Transformation(Matrix4f().translate(dx, dy, dz).mul(matrix)))
         // Duration 1: each per-tick update lerps over exactly one tick, chaining seamlessly. Do NOT
         // raise this — a longer window low-pass-filters the fast leg oscillation, visibly damping
         // the scurry (tried 2; the legs went mushy).
-        display.setTransformationInterpolationDuration(if (fresh) 0 else 1)
+        display.setTransformationInterpolationDuration(if (fresh || !interpolate) 0 else 1)
         // CRITICAL 1.20.1 QUIRK (verified in the decompiled client Display.java): the client only
         // restarts its interpolation window when the start-delay DATA VALUE IS RECEIVED, and the
         // sync layer only resends CHANGED values — a plain setTransformationInterpolationDelay(0) every tick is
@@ -192,8 +201,10 @@ class RenderBlockDisplay(
 }
 
 /** Convenience: a block display at a world position with a local transform matrix. */
-fun renderBlock(level: ServerLevel, position: Vector3d, velocity: Vector3d, block: BlockState, matrix: Matrix4f): RenderBlockDisplay =
-    RenderBlockDisplay(level, position, velocity, block, matrix)
+fun renderBlock(
+    level: ServerLevel, position: Vector3d, velocity: Vector3d, block: BlockState, matrix: Matrix4f,
+    brightness: Brightness? = null, interpolate: Boolean = true,
+): RenderBlockDisplay = RenderBlockDisplay(level, position, velocity, block, matrix, brightness, interpolate)
 
 object DisplayTracker {
     // Retired displays overlap their replacement for this many render passes before being
@@ -280,3 +291,14 @@ fun ServerLevel.removeOrphanDisplays(near: Vector3d) {
     val orphans = this.getEntitiesOfClass(Display.BlockDisplay::class.java, box) { it.tags.contains(DISPLAY_TAG) }
     for (e in orphans) e.discard()
 }
+
+// ---- The config book ------------------------------------------------------------------
+
+/**
+ * May this player CHANGE the spider's settings from the config book? Operators - the same level
+ * /spider config needs - and always the owner of a single-player world, cheats or not: it is
+ * their world. Everyone else gets a read-only view.
+ */
+fun net.minecraft.server.level.ServerPlayer.canEditSpiderConfig(): Boolean =
+    permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER) ||
+        level().server.isSingleplayerOwner(nameAndId())

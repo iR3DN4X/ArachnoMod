@@ -26,3 +26,6 @@ accessible method net/minecraft/world/entity/Display setViewRange (F)V
 # 26.1 made Entity.tags private. The janitor sweep marks our BlockDisplays with a tag and
 # later identifies orphans by it, so we need read access to the set.
 accessible field net/minecraft/world/entity/Entity tags Ljava/util/Set;
+
+# Brightness override setter (the debug view's full-bright parts).
+accessible method net/minecraft/world/entity/Display setBrightnessOverride (Lnet/minecraft/util/Brightness;)V

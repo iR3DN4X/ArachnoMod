@@ -7,6 +7,7 @@ import com.heledron.spideranimation.spider.SpiderBehaviour
 import com.heledron.spideranimation.spider.SpiderBody
 import com.heledron.spideranimation.spider.StayStillBehaviour
 import com.heledron.spideranimation.spider.TargetBehaviour
+import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import org.joml.Vector3d
@@ -18,7 +19,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-enum class SpiderMode { WANDER, ALERT, CHASE }
+enum class SpiderMode { WANDER, ALERT, CHASE, LURE, REPEL }
 
 /**
  * Per-spider AI memory: current mode, how long it's been in it, and the patrol anchor/target.
@@ -43,7 +44,18 @@ class SpiderAIState(var anchor: Vector3d) {
     var openingHi = 0.0              //   one-block-thick doorway; metres apart for a tunnel)
     var openingTimer = 0             // ticks left on the commitment, or on the rescan cooldown
     var waypointArrive = 1.0         // how close the current waypoint wants to be reached
+
+    // THE LASER POINTER's dot, and how many ticks are left on it. Outranks every other mode.
+    var lureX = 0.0
+    var lureY = 0.0
+    var lureZ = 0.0
+    var lureTimer = 0
+
+    // REPEL: the furthest from the idol it has got so far, and how long since that last grew.
+    var repelBest = 0.0
+    var repelStall = 0
 }
+
 
 /**
  * Replaces the old "chase if a player is in range, otherwise freeze in place" logic with a
@@ -57,6 +69,12 @@ class SpiderAIState(var anchor: Vector3d) {
  *           chaseExitDistanceMultiplier (a wider exit radius than entry, so the behaviour and
  *           speed don't flicker back and forth for players pacing the boundary - this hysteresis
  *           is what fixed the gait-swap glitching at the chase edge).
+ *  REPEL  - inside a Warding Idol's zone with nobody it may reach: run straight away from the
+ *           idol until it is out, then go back to wandering. Outranks everything, even the laser.
+ *
+ * Warding idols also fence the body out (SpiderBody's barriers, at most one block past the
+ * edge) and hide every player deeper inside than that, so running into one breaks a chase.
+ * None of that applies to the ENRAGED boss, which blows idols apart instead.
  *
  * With hostileOnlyAtNight enabled, daytime players are simply not "seen": the spider wanders.
  *
@@ -86,7 +104,60 @@ object SpiderAI {
         body.passageLaneX = null
         body.passageLaneZ = null
 
-        var nearestPlayer = level.players().minByOrNull {
+        // THE ENRAGED BOSS is immune to warding idols - no fence, no REPEL, nobody hidden from it -
+        // and blows apart any idol it gets near, measured from its FEET (a giant's body centre
+        // rides far above the ground the idol sits on).
+        if (body.enraged) {
+            WardRegistry.shatterNear(level, body.position.x,
+                body.position.y - body.walkGait.stationary.bodyHeight, body.position.z,
+                WardRegistry.ENRAGED_SHATTER_RANGE)
+            if (state.mode == SpiderMode.REPEL) enterWander(state, body)
+        }
+
+        // WARDING IDOLS. Fence the body out of every armed zone nearby - SpiderBody holds it at
+        // most BITE_BAND past the edge, whatever the steering below asks for - and find out
+        // whether it is standing inside one right now.
+        val zones = if (body.enraged) emptyList()
+            else WardRegistry.zonesNear(level, body.position.x, body.position.z, WARD_FENCE_MARGIN)
+        body.barriers = zones.map { SpiderBody.Barrier(it.x, it.z, it.radius - WardRegistry.BITE_BAND) }
+        val zone = zones.filter { it.distance(body.position.x, body.position.z) < it.radius }
+            .minByOrNull { it.distance(body.position.x, body.position.z) - it.radius }
+
+        // REPEL outranks everything, the laser included: a spider inside a zone runs for the
+        // edge, and only once it is out does it go back to its usual business. The fence keeps
+        // it from ever getting deeper than the bite band on its own, so landing here means it
+        // was already inside - the idol armed around it, or it was summoned there.
+        if (state.mode == SpiderMode.REPEL) {
+            if (zone != null) {
+                tickRepel(entity, body, state, zone)
+                return
+            }
+            enterWander(state, body)   // out: carry on below as a wanderer
+        } else if (zone != null &&
+            zone.radius - zone.distance(body.position.x, body.position.z) > WardRegistry.BITE_BAND + REPEL_SLACK) {
+            enterRepel(state, body, zone)
+            tickRepel(entity, body, state, zone)
+            return
+        }
+
+        // THE LASER POINTER outranks everything, including a chase — that is the whole point of
+        // it: shine the dot and the spider breaks off and goes for it instead. LURE is not CHASE,
+        // so SpiderMob's bite stays holstered while it is distracted.
+        if (state.lureTimer > 0) {
+            state.lureTimer--
+            if (state.mode != SpiderMode.LURE) {
+                state.mode = SpiderMode.LURE
+                state.modeTimer = 0
+            }
+            tickLure(entity, body, state)
+            return
+        }
+        if (state.mode == SpiderMode.LURE) enterWander(state, body)   // the dot just went out
+
+        // A player more than the bite band inside a warding idol's zone is out of reach, so it
+        // does not see them at all: no hunt starts on them, and a running one breaks off. The
+        // enraged boss sees everyone.
+        var nearestPlayer = level.players().filter { body.enraged || !WardRegistry.isSafe(level, it.x, it.z) }.minByOrNull {
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
         }
 
@@ -105,13 +176,13 @@ object SpiderAI {
                     enterAlert(state)
                     tickAlert(entity, body, state, nearestPlayer)
                 } else {
-                    tickWander(entity, body, state)
+                    wanderOrRepel(entity, body, state, zone)
                 }
             }
             SpiderMode.ALERT -> {
                 if (nearestPlayer == null || distanceToPlayer > exitRadius) {
                     enterWander(state, body)
-                    tickWander(entity, body, state)
+                    wanderOrRepel(entity, body, state, zone)
                 } else {
                     tickAlert(entity, body, state, nearestPlayer)
                 }
@@ -119,16 +190,161 @@ object SpiderAI {
             SpiderMode.CHASE -> {
                 if (nearestPlayer == null || distanceToPlayer > exitRadius) {
                     enterWander(state, body)
-                    tickWander(entity, body, state)
+                    wanderOrRepel(entity, body, state, zone)
                 } else {
                     tickChase(entity, body, state, nearestPlayer)
                 }
             }
+            // Unreachable: the lure and repel branches above return, and an expired lure (or a
+            // finished repel) is turned back into WANDER before we get here. Kotlin still wants
+            // the cases spelled out.
+            SpiderMode.LURE, SpiderMode.REPEL -> tickWander(entity, body, state)
         }
     }
 
+    /** Nobody to hunt: wander - unless it is standing in a ward's zone, in which case it backs
+     *  out first (a chase that ended at the edge, say, because its quarry ran inside). */
+    private fun wanderOrRepel(entity: EcsEntity, body: SpiderBody, state: SpiderAIState, zone: WardRegistry.Zone?) {
+        if (zone == null) {
+            tickWander(entity, body, state)
+            return
+        }
+        enterRepel(state, body, zone)
+        tickRepel(entity, body, state, zone)
+    }
+
+    /** A spider that has been stuck inside a ward's zone for a while, unable to run out (walled
+     *  in, say). SpiderSpawnManager moves that one along the old way, alive. */
+    fun repelStalled(): Boolean =
+        states.values.any { it.mode == SpiderMode.REPEL && it.repelStall >= REPEL_STALL_TICKS }
+
     /** True while this spider is actively hunting (used by SpiderMob to gate the melee bite). */
     fun isChasing(entity: EcsEntity): Boolean = states[entity]?.mode == SpiderMode.CHASE
+
+    /** Is ANY spider hunting right now? There is only ever one, so this answers "is the hunt on". */
+    fun anyChasing(): Boolean = states.values.any { it.mode == SpiderMode.CHASE }
+
+    /**
+     * Shine the laser pointer's dot at [point] for [ticks]. Applied to every wild spider (there
+     * is only ever one) and returns false when there is none to take the bait. Personal spiders
+     * from /spider newinstance are under manual control and never reach SpiderAI, so the pointer
+     * leaves them alone.
+     */
+    fun lure(point: Vector3d, ticks: Int): Boolean {
+        if (states.isEmpty()) return false
+        for (state in states.values) {
+            state.lureX = point.x
+            state.lureY = point.y
+            state.lureZ = point.z
+            state.lureTimer = ticks
+        }
+        return true
+    }
+
+    /** Scurry to the dot, and keep drawing it so the pointer is visible while it lasts. */
+    private fun tickLure(entity: EcsEntity, body: SpiderBody, state: SpiderAIState) {
+        val point = Vector3d(state.lureX, state.lureY, state.lureZ)
+        body.setSpeedScale(chaseSpeedFactor(body))
+        // A dot inside a ward's zone draws it only as far as the fence.
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(fenced(body, point), 0.75))
+        body.level.sendParticles(ParticleTypes.FLAME, point.x, point.y + 0.1, point.z, 1, 0.0, 0.0, 0.0, 0.0)
+    }
+
+    // ---------------------------------------------------------------- warding idols
+
+    // How far beyond a zone's edge the fence is already handed to the body (so a fast spider -
+    // or a lunge - can never cover the gap between two AI ticks), how far past the bite band it
+    // may be found before it counts as having been caught INSIDE, how far past the edge it runs
+    // when repelled, and how long it may go without gaining a block on the way out before it is
+    // judged stuck.
+    private const val WARD_FENCE_MARGIN = 16.0
+    private const val REPEL_SLACK = 0.25
+    private const val REPEL_CLEARANCE = 3.0
+    private const val REPEL_STALL_TICKS = 200
+
+    private fun enterRepel(state: SpiderAIState, body: SpiderBody, zone: WardRegistry.Zone) {
+        state.mode = SpiderMode.REPEL
+        state.modeTimer = 0
+        state.squeezing = false
+        state.passageClearance = 0
+        clearOpening(state)
+        state.repelBest = zone.distance(body.position.x, body.position.z)
+        state.repelStall = 0
+    }
+
+    /** Run straight away from the idol - the opposite direction to it - until clear of the edge. */
+    private fun tickRepel(entity: EcsEntity, body: SpiderBody, state: SpiderAIState, zone: WardRegistry.Zone) {
+        state.squeezing = false
+        state.passageClearance = 0
+        body.setSpeedScale(chaseSpeedFactor(body))   // it RUNS
+        val dist = zone.distance(body.position.x, body.position.z)
+        var ux = body.position.x - zone.x
+        var uz = body.position.z - zone.z
+        if (dist < 1.0e-3) {
+            // Standing on the idol itself: any way out is the shortest way out.
+            val facing = body.forwardDirection()
+            ux = facing.x
+            uz = facing.z
+        }
+        val len = sqrt(ux * ux + uz * uz).coerceAtLeast(1.0e-6)
+        val out = zone.radius - dist + REPEL_CLEARANCE
+        val x = body.position.x + ux / len * out
+        val z = body.position.z + uz / len * out
+        val y = SafeGroundFinder.groundYAt(body.level, x, z, refY = body.position.y) ?: body.position.y
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(Vector3d(x, y, z), 0.5))
+
+        if (dist > state.repelBest + 1.0) {
+            state.repelBest = dist
+            state.repelStall = 0
+        } else {
+            state.repelStall++
+        }
+    }
+
+    /**
+     * Where to steer for [target] without asking the body to go deeper into a ward than it is
+     * allowed: a point past the fence is pulled back out onto it, radially. SpiderBody's barrier
+     * would hold the body there anyway - this just stops it straining at the line toward
+     * something it can never reach.
+     */
+    private fun fenced(body: SpiderBody, target: Vector3d): Vector3d {
+        if (body.enraged) return target   // the boss goes wherever it likes
+        var x = target.x
+        var z = target.z
+        var moved = false
+        for (zone in WardRegistry.zonesNear(body.level, x, z, 0.0)) {
+            val fence = zone.radius - WardRegistry.BITE_BAND
+            val dist = zone.distance(x, z)
+            if (dist >= fence) continue
+            val ux = if (dist > 1.0e-6) (x - zone.x) / dist else 1.0
+            val uz = if (dist > 1.0e-6) (z - zone.z) / dist else 0.0
+            x = zone.x + ux * fence
+            z = zone.z + uz * fence
+            moved = true
+        }
+        if (!moved) return target
+        // The passage pins belong to the doorway it was threading; they don't apply on the fence.
+        body.passageFloorY = null
+        body.passageLaneX = null
+        body.passageLaneZ = null
+        val y = SafeGroundFinder.groundYAt(body.level, x, z, refY = target.y) ?: target.y
+        return Vector3d(x, y, z)
+    }
+
+    /** Does the straight walk from [from] to [to] cut into any armed ward's zone? */
+    private fun crossesWard(level: ServerLevel, from: Vector3d, to: Vector3d): Boolean {
+        val dx = to.x - from.x
+        val dz = to.z - from.z
+        val lenSq = dx * dx + dz * dz
+        val reach = sqrt(lenSq) + 1.0
+        for (zone in WardRegistry.zonesNear(level, from.x, from.z, reach)) {
+            // Closest point of the segment to the idol.
+            val t = if (lenSq < 1.0e-9) 0.0
+                else (((zone.x - from.x) * dx + (zone.z - from.z) * dz) / lenSq).coerceIn(0.0, 1.0)
+            if (zone.distance(from.x + dx * t, from.z + dz * t) < zone.radius) return true
+        }
+        return false
+    }
 
     /** True while the spider is pressing over a dug-in player and should SQUEEZE down to
      *  Config.SQUEEZE_SIZE to fit into their hole (SpiderMob drives the actual scale). */
@@ -275,7 +491,7 @@ object SpiderAI {
                 arrive = state.waypointArrive
             }
         }
-        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(targetPos, arrive))
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(fenced(body, targetPos), arrive))
     }
 
     // ---------------------------------------------------------------- the hunter's stalk
@@ -328,7 +544,7 @@ object SpiderAI {
             }
         }
         state.passageClearance = 0   // fixed size: openings are walked through, never shrunk for
-        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(targetPos, arrive))
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(fenced(body, targetPos), arrive))
     }
 
     /** Is this player's view direction pointing at the spider's body (within ~45°)? */
@@ -611,8 +827,12 @@ object SpiderAI {
             val dist = Random.nextDouble() * radius
             val x = anchor.x + cos(angle) * dist
             val z = anchor.z + sin(angle) * dist
+            // Warding idols are no-go ground: a patrolling spider never picks a spot inside one,
+            // nor a route that cuts across the edge of one on the way. (Not the enraged boss.)
+            if (!body.enraged && WardRegistry.isProtected(level, x, z)) return@repeat
             val safeY = SafeGroundFinder.groundYAt(level, x, z, refY = anchor.y) ?: return@repeat
             val target = Vector3d(x, safeY, z)
+            if (!body.enraged && crossesWard(level, body.position, target)) return@repeat
             // Route pre-scan: the destination being safe isn't enough — the WAY there must be too.
             // A comfortable step-down scales with the spider (a giant strides off ledges a small
             // one would tumble from); climbs UP are never rejected — climbing is what spiders do.

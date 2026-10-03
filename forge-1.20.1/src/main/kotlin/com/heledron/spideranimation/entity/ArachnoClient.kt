@@ -19,6 +19,11 @@ object ArachnoClient {
         modBus.addListener(::onRegisterRenderers)
     }
 
+    /** The config book's snapshot arrived (see ConfigBookNet): open or refresh the settings screen. */
+    fun receiveConfigBook(data: String) {
+        ConfigBookScreen.receive(data) { request -> ConfigBookNet.sendToServer(request) }
+    }
+
     private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
         event.registerEntityRenderer(SpiderAnimationMod.SPIDER_ENTITY.get()) { context -> NoopRenderer(context) }
     }

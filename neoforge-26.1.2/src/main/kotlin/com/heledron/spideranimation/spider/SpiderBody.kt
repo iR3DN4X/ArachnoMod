@@ -98,6 +98,13 @@ class SpiderBody(
     var passageLaneX: Double? = null
     var passageLaneZ: Double? = null
 
+    // WARDING IDOLS: circles the body may not cross INTO. Handed over by SpiderAI every tick for
+    // a wild spider and consumed (then cleared) by the physics step, so a body under manual
+    // control - a rider - is never fenced. One-way on purpose: a body that is ALREADY inside a
+    // circle is left free to walk out (SpiderAI's REPEL steers that); one outside cannot get in.
+    class Barrier(val x: Double, val z: Double, val radius: Double)
+    var barriers: List<Barrier> = emptyList()
+
     // What is ACTUALLY in force this tick: the pathfinder's intent above, merged with what the
     // body can see around itself (see updateConfinement). The self-detected half is the
     // important one — the pathfinder drops its waypoint the moment the line to the player
@@ -361,12 +368,16 @@ class SpiderBody(
         }
 
         // apply velocity
+        val beforeX = position.x
+        val beforeZ = position.z
         position.add(velocity)
 
         // Hold the centre line of a passage being threaded, and kill the lateral velocity that
         // is trying to push off it, so the body stays inside the tube for its whole length.
         activeLaneX?.let { lane -> position.x += (lane - position.x) * 0.6; velocity.x *= 0.2 }
         activeLaneZ?.let { lane -> position.z += (lane - position.z) * 0.6; velocity.z *= 0.2 }
+
+        applyBarriers(beforeX, beforeZ)
 
         // resolve collision
         val heightPin = activePinY ?: squeezeTargetY
@@ -474,6 +485,39 @@ class SpiderBody(
 
         lungeTimer--
         if (lungeTimer == 0) endLunge()
+    }
+
+    // ---- Warding idol barriers ----------------------------------------------------------------
+
+    /**
+     * A body that just crossed INTO a ward's circle is put back on its rim, and the part of its
+     * velocity driving inward is removed - so anything that would carry it in (a chase, a lunge,
+     * plain momentum) instead slides it along the edge. Physics rather than AI on purpose: it
+     * holds whatever the AI or a lunge asks for. A body that started the tick inside is left
+     * alone: it is on its way out, and snapping it to the rim would be a teleport.
+     */
+    private fun applyBarriers(beforeX: Double, beforeZ: Double) {
+        val fence = barriers
+        barriers = emptyList()
+        for (b in fence) {
+            val bx = beforeX - b.x
+            val bz = beforeZ - b.z
+            val before = sqrt(bx * bx + bz * bz)
+            if (before < b.radius - 1.0e-3) continue
+            val nx = position.x - b.x
+            val nz = position.z - b.z
+            val now = sqrt(nx * nx + nz * nz)
+            if (now >= b.radius) continue
+            val ux = if (now > 1.0e-6) nx / now else bx / before
+            val uz = if (now > 1.0e-6) nz / now else bz / before
+            position.x = b.x + ux * b.radius
+            position.z = b.z + uz * b.radius
+            val inward = velocity.x * ux + velocity.z * uz
+            if (inward < 0.0) {
+                velocity.x -= inward * ux
+                velocity.z -= inward * uz
+            }
+        }
     }
 
     // ---- Idle grooming (contributed by NetherySiloX; completed & integrated here) ------------

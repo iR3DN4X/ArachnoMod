@@ -1,5 +1,6 @@
 package com.heledron.spideranimation
 
+import com.heledron.spideranimation.entity.SpiderSpawnManager
 import com.electronwill.nightconfig.core.file.CommentedFileConfig
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,6 +24,9 @@ import java.nio.file.Path
  */
 object Config {
     val entries = mutableListOf<Entry<*>>()
+
+    /** Which part of the in-game settings screen the entries being declared belong to. */
+    private var section = "General"
     private var backing: CommentedFileConfig? = null
 
     /** Join comment lines with a leading space each, so night-config writes `# line`. */
@@ -34,6 +38,12 @@ object Config {
         private val comment: String,
     ) {
         init { @Suppress("LeakingThis") entries.add(this) }
+
+        /** The settings-screen category this entry was declared under. */
+        val group: String = section
+
+        /** The comment, as the settings screen shows it. */
+        val description: String get() = comment.lines().joinToString("\n") { it.trim() }
 
         /** The raw stored value, or null if the config isn't loaded / the key is absent. */
         protected fun raw(): Any? = backing?.get<Any?>(path)
@@ -79,12 +89,20 @@ object Config {
         fun set(value: String) = store(value)
     }
 
+    /** Free-form text - used for the comma-separated dimension lists. */
+    class StringValue(
+        path: String, default: String, comment: String,
+    ) : Entry<String>(path, default, comment) {
+        override fun get(): String = (raw() as? String) ?: default
+        fun set(value: String) = store(value)
+    }
+
     // ---- One-time migration of stale defaults --------------------------------------------
     // Defaults only apply to NEWLY generated files: without this, everyone updating from an
     // older version silently keeps the old pacing (5-30 min first spawn) and the weaker spawn
     // search — "the spider never shows up". Each migration upgrades a value ONLY if it still
     // equals its OLD default, so deliberate customization is never overwritten.
-    private const val CONFIG_VERSION = 5
+    private const val CONFIG_VERSION = 8
     // Grouped by the config version that INTRODUCED each batch: a file older than that
     // version gets the batch applied (each value still only if it sits at its old default).
     private val MIGRATIONS: Map<Int, List<Triple<String, Any, Any>>> = mapOf(
@@ -95,6 +113,12 @@ object Config {
         ),
         3 to listOf(
             Triple("maxHealth", 1000.0, 600.0),      // v1.2.6: health nerf; netherite wears armor now
+        ),
+        6 to listOf(
+            Triple("attackCooldownTicks", 20, 60), // v1.8.5: one bite every 3s, not every 1s
+        ),
+        7 to listOf(
+            Triple("wardRadius", 64.0, 128.0),     // v1.8.5: the safe zone doubles to 128 blocks
         ),
     )
 
@@ -138,6 +162,14 @@ object Config {
             }
             cfg.remove<Any?>("attackDamageHearts")
         }
+        // v8 (mod v1.8.5): the idol's arming delay is counted in SECONDS now (default 5), not
+        // minutes. A CUSTOMIZED old value carries over, converted; the old 5-minute default is
+        // dropped so the new 5-second default applies.
+        if (fileVersion < 8) {
+            val old = (cfg.get<Any?>("wardArmingMinutes") as? Number)?.toDouble()
+            if (old != null && old != 5.0) cfg.set<Any?>("wardArmingSeconds", old * 60.0)
+            cfg.remove<Any?>("wardArmingMinutes")
+        }
         cfg.set<Any?>("configVersion", CONFIG_VERSION)
         cfg.setComment("configVersion", " Internal config-format version - do not edit.")
     }
@@ -166,6 +198,7 @@ object Config {
     }
 
     // ---- Spawning --------------------------------------------------------------------------
+    init { section = "Spawning" }
     val SPAWN_MIN_MINUTES = DoubleValue("spawnMinMinutes", 1.0, 0.05, 1440.0,
         comment("Minimum minutes before the FIRST spider of a session spawns (default 1 - the hunt begins fast)."))
     val SPAWN_MAX_MINUTES = DoubleValue("spawnMaxMinutes", 1.0, 0.05, 1440.0,
@@ -182,6 +215,54 @@ object Config {
                 "One kill ends the hunt for good - the victory is written into the world save, so it",
                 "survives restarts. Spawn eggs and /spider newinstance still work if you want one back.",
                 "Default false: it returns after respawnAfterKillMinutes."))
+    val SPAWN_DIMENSIONS = StringValue("spawnDimensions", "",
+        comment("WHERE the hunt happens. Comma-separated list of the ONLY dimensions the spider is",
+                "allowed to spawn in, e.g. \"minecraft:overworld\" or",
+                "\"minecraft:overworld, minecraft:the_nether\".",
+                "EMPTY (the default) means EVERY dimension, including modded ones - what every",
+                "earlier version did. Ids are case-insensitive, a bare name like \"overworld\" is",
+                "read as minecraft:overworld, and \"nether\"/\"end\" work as shorthand.",
+                "This also governs dimension FOLLOWING: the spider will not follow players into a",
+                "dimension it is not allowed to spawn in. Spawn eggs and /spider newinstance are",
+                "deliberately NOT restricted, so one can still be summoned anywhere."))
+    val BLOCKED_DIMENSIONS = StringValue("blockedDimensions", "",
+        comment("Comma-separated list of dimensions the spider may NEVER spawn in. Checked after",
+                "spawnDimensions and it always wins, so leaving spawnDimensions empty and setting",
+                "this to \"minecraft:the_end\" means \"everywhere EXCEPT the End\"."))
+    init { section = "Warding Idol" }
+    val WARD_ENABLED = BooleanValue("wardEnabled", true,
+        comment("Are WARDING IDOLS active? Craft one (4 diamonds, 4 deepslate and a netherite ingot)",
+                "and place it to make a SAFE ZONE wardRadius blocks around it: no spider spawns inside",
+                "it, and none will hunt, bite or blind anyone standing more than 1 block inside its edge -",
+                "run in and a chase breaks off at the line. The spider itself can never get more than 1",
+                "block past the edge, and one caught inside runs straight out, away from the idol.",
+                "The ENRAGED boss ignores idols and blows apart any within 16 blocks of it. Set false to",
+        "disable them server-wide."))
+    val WARD_RADIUS = DoubleValue("wardRadius", 128.0, 8.0, 512.0,
+        comment("How far a Warding Idol reaches, in blocks, measured horizontally - the protection is",
+                "a CYLINDER, so a base is covered from bedrock to sky. Keep this comfortably above",
+                "spawnDistanceMax (34) or a spider simply spawns outside the circle and walks in."))
+    val WARD_MIN_SPACING = DoubleValue("wardMinSpacing", 256.0, 0.0, 4096.0,
+        comment("Minimum distance between two idols, in blocks. This - not the recipe - is what stops",
+                "a group carpeting the map in safety: you can protect a base and an outpost or two,",
+                "never a continent. Placing one too close returns the idol with a message. 0 = no limit."))
+    val WARD_ARMING_SECONDS = DoubleValue("wardArmingSeconds", 5.0, 0.0, 86400.0,
+        comment("Seconds a freshly placed idol takes to wake up (default 5). Until then it protects nothing,",
+                "and placing one says how long is left. 0 = active instantly."))
+    init { section = "Tools & items" }
+    val LASER_POINTER_RANGE = DoubleValue("laserPointerRange", 64.0, 4.0, 256.0,
+        comment("How far the SPIDER LASER POINTER can throw its dot, in blocks. Right-click with the",
+                "pointer (creative only) and the spider scurries to whatever surface you are aiming",
+                "at, like a cat. Nothing happens if the dot lands on no surface within this range."))
+    val LASER_POINTER_LURE_SECONDS = DoubleValue("laserPointerLureSeconds", 4.0, 0.5, 120.0,
+        comment("How long the spider stays fixed on the dot, in seconds, per click. While it is",
+                "chasing the dot it is NOT hunting, so it will not bite - a pointer genuinely pulls",
+                "it off a player. Click again to move the dot and refresh the time."))
+    val GIVE_CONFIG_BOOK = BooleanValue("giveConfigBook", true,
+        comment("Hand every player who may change these settings (operators, and the owner of a",
+                "single-player world) a SPIDER CONFIG BOOK the first time they join. Right-click it for",
+                "an in-game screen with every setting, its description and a reset button."))
+    init { section = "Spawning" }
     val SPAWN_DISTANCE_MIN = DoubleValue("spawnDistanceMin", 30.0, 4.0, 128.0,
         comment("Closest distance (blocks) from a player that a spider may naturally spawn."))
     val SPAWN_DISTANCE_MAX = DoubleValue("spawnDistanceMax", 34.0, 4.0, 128.0,
@@ -227,6 +308,7 @@ object Config {
                 "FIRST, before poison and camo; natural spawns and spawn eggs alike)."))
 
     // ---- Chase & speed ---------------------------------------------------------------------
+    init { section = "Chase & speed" }
     val CHASE_DISTANCE = DoubleValue("chaseDistance", 64.0, 8.0, 256.0,
         comment("How far away (blocks) the spider spots and chases players.",
                 "Also settable in-game with /spider config chaseDistance set <blocks>."))
@@ -255,6 +337,7 @@ object Config {
         comment("How fast the legs swing when taking a step (blocks/tick at normal size) - the 'scurry'."))
 
     // ---- Wandering -------------------------------------------------------------------------
+    init { section = "Wandering" }
     val ENABLE_WANDERING = BooleanValue("enableWandering", true,
         comment("If false, the spider stands still (pre-1.1 behaviour) until it spots a player."))
     val WANDER_SPEED_FACTOR = DoubleValue("wanderSpeedFactor", 0.35, 0.05, 1.0,
@@ -274,6 +357,7 @@ object Config {
                 "The idle spider also breathes (a gentle body bob) whenever wandering is disabled."))
 
     // ---- Size & growth ---------------------------------------------------------------------
+    init { section = "Size & growth" }
     val MIN_SIZE = DoubleValue("minSize", 0.6, 0.1, 10.0,
         comment("The spider's size when right next to a player (1.0 = the original spider's size)."))
     val SQUEEZE_SIZE = DoubleValue("squeezeSize", 0.25, 0.1, 1.0,
@@ -298,8 +382,24 @@ object Config {
                 "above the surface - whatever the depth - so it never drowns and keeps chasing",
                 "swimmers. Set to false to keep water as a weakness: a small spider lured into",
                 "deep water will stay small and drown."))
+    val ENABLE_GROWTH = BooleanValue("enableGrowth", true,
+        comment("true (default): the NETHERITE and CAMO spiders grow with distance (minSize up to",
+                "maxSize) and in deep water (growInWater); POISON and HUNTER keep their own fixed",
+                "poisonSize / hunterSize.",
+                "false: EVERY spider - all four variants, and the enraged boss - holds ONE size,",
+                "fixedSizeBlocks tall, near or far, in water, and while ridden (riddenSize is",
+                "ignored). It still shrinks BELOW that to fit a doorway or a low ceiling, and all but",
+                "the hunter still squeeze into a 1x1 hole after you - those shrinks are what keep it",
+                "out of walls and roofs. It never grows above fixedSizeBlocks.",
+                "Speed follows size, so a fixed-size spider moves at the pace of that size with no",
+                "long-range sprint; raise chaseSpeedBlocksPerSecond to make up for it."))
+    val FIXED_SIZE_BLOCKS = DoubleValue("fixedSizeBlocks", 2.0, 0.5, 64.0,
+        comment("How tall every spider stands, in blocks, when enableGrowth = false (default 2 - a",
+                "little taller than a player). Measured from the floor to the top of its highest leg",
+                "while standing. Ignored while enableGrowth = true."))
 
     // ---- Combat & drops --------------------------------------------------------------------
+    init { section = "Combat & drops" }
     val NETHERITE_MAX_HEALTH = DoubleValue("netheriteMaxHealth", 350.0, 1.0, 1000000.0,
         comment("Max health of the NETHERITE variant (default 350). It also wears the stats of a full",
                 "netherite armor suit, so it soaks far more weapon damage than the raw number suggests."))
@@ -368,8 +468,10 @@ object Config {
                 "every bite that lands also injects Poison II (see poisonEffectSeconds)."))
     val POISON_EFFECT_SECONDS = DoubleValue("poisonEffectSeconds", 30.0, 0.0, 3600.0,
         comment("How long (seconds) the Poison II from the poison variant's bite lasts."))
-    val ATTACK_COOLDOWN_TICKS = IntValue("attackCooldownTicks", 20, 1, 400,
-        comment("Ticks between melee hits (20 = one hit per second)."))
+    val ATTACK_COOLDOWN_TICKS = IntValue("attackCooldownTicks", 60, 10, 120,
+        comment("Ticks between melee hits, for EVERY variant (60 = one hit every 3 seconds).",
+                "Range 10-120 = half a second to six seconds. The poison variant's lunge uses the",
+                "same cooldown, so one leap still equals one bite."))
     val NETHERITE_DROP_CHANCE = DoubleValue("netheriteDropChance", 0.5, 0.0, 1.0,
         comment("Chance (0.0-1.0) to drop a single netherite ingot on death. 0.5 = half the time."))
     val ENRAGED_MAX_HEALTH = DoubleValue("enragedMaxHealth", 700.0, 1.0, 1000000.0,
@@ -381,6 +483,7 @@ object Config {
         comment("The enraged boss's bite damage in HEARTS. It always drops a FULL netherite block."))
 
     // ---- Variant sounds --------------------------------------------------------------------
+    init { section = "Variant sounds" }
     // The default (netherite) spider ALWAYS uses its iconic netherite step/fall sounds. The CAMO
     // variant automatically plays the step/fall sound OF THE BLOCK it walks on (like a player's
     // footsteps) - these entries are its fallback (foot over air) and the sound set for any
@@ -395,4 +498,66 @@ object Config {
         comment("Fallback/other-variant landing sound (camo normally plays the block's own fall sound)."))
     val VARIANT_LAND_VOLUME = DoubleValue("variantLandVolume", 1.0, 0.0, 10.0,
         comment("Volume of variant landing sounds (scales camo's block-matched landings too)."))
+
+    // ---- The config book: the in-game settings screen ------------------------------------
+    // Everything as text, so it can travel to the client in one packet. [bookSet] applies the
+    // same ranges and parsing as /spider config, and persists the same way.
+
+    class BookRow(
+        val path: String, val kind: Char, val value: String, val default: String,
+        val min: String, val max: String, val group: String, val description: String,
+    )
+
+    fun bookRows(): List<BookRow> = entries.mapNotNull { e ->
+        when (e) {
+            is DoubleValue -> BookRow(e.path, 'D', e.get().toString(), e.default.toString(), e.min.toString(), e.max.toString(), e.group, e.description)
+            is IntValue -> BookRow(e.path, 'I', e.get().toString(), e.default.toString(), e.min.toString(), e.max.toString(), e.group, e.description)
+            is BooleanValue -> BookRow(e.path, 'B', e.get().toString(), e.default.toString(), "", "", e.group, e.description)
+            is SoundIdValue -> BookRow(e.path, 'S', e.get().toString(), e.default.toString(), "", "", e.group, e.description)
+            is StringValue -> BookRow(e.path, 'T', e.get().toString(), e.default.toString(), "", "", e.group, e.description)
+            else -> null
+        }
+    }
+
+    /** Set [path] from what was typed into the screen. Null when it took, else why it was refused. */
+    fun bookSet(path: String, text: String): String? {
+        val e = entries.firstOrNull { it.path == path } ?: return "Unknown setting '$path'."
+        val t = text.trim()
+        when (e) {
+            is DoubleValue -> {
+                val v = t.toDoubleOrNull() ?: return "'$t' is not a number."
+                if (v < e.min || v > e.max) return "$path must be between ${e.min} and ${e.max}."
+                e.set(v)
+            }
+            is IntValue -> {
+                val v = t.toIntOrNull() ?: return "'$t' is not a whole number."
+                if (v < e.min || v > e.max) return "$path must be between ${e.min} and ${e.max}."
+                e.set(v)
+            }
+            is BooleanValue -> e.set(bookBoolean(t) ?: return "$path must be true or false.")
+            is SoundIdValue -> e.set(bookSoundId(t) ?: return "'$t' is not a sound id (like minecraft:block.moss.step).")
+            is StringValue -> e.set(SpiderSpawnManager.normalizeDimensionInput(t))
+            else -> return "$path can't be changed here."
+        }
+        return null
+    }
+
+    /** Put [path] back to its default. */
+    fun bookReset(path: String): Boolean {
+        val default = bookRows().firstOrNull { it.path == path }?.default ?: return false
+        return bookSet(path, default) == null
+    }
+
+    private fun bookBoolean(text: String): Boolean? = when (text.lowercase()) {
+        "true", "on", "yes" -> true
+        "false", "off", "no" -> false
+        else -> null
+    }
+
+    /** A sound id as /spider config accepts it: the namespace defaults to minecraft. */
+    private fun bookSoundId(text: String): String? {
+        val id = text.lowercase()
+        if (!Regex("[a-z0-9_.-]+(:[a-z0-9_./-]+)?").matches(id)) return null
+        return if (':' in id) id else "minecraft:$id"
+    }
 }

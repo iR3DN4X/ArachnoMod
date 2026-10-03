@@ -18,3 +18,6 @@ accessible method net/minecraft/world/entity/Display setInterpolationDelay (I)V
 
 # View range setter (trailing-anchored displays must never be distance-culled while on screen).
 accessible method net/minecraft/world/entity/Display setViewRange (F)V
+
+# Brightness override setter (the debug view's full-bright parts).
+accessible method net/minecraft/world/entity/Display setBrightnessOverride (Lnet/minecraft/util/Brightness;)V

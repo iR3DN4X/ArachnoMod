@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/written_book",
+    "layer1": "arachnomod:item/spider_config_book_eyes"
+  }
+}

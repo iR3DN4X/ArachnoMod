@@ -4,6 +4,8 @@ import com.heledron.spideranimation.Config
 import com.heledron.spideranimation.SpiderAnimationMod
 import com.heledron.spideranimation.platform.DISPLAY_TAG
 import com.heledron.spideranimation.platform.DisplayTracker
+import com.heledron.spideranimation.platform.dimensionId
+import java.util.UUID
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
@@ -109,6 +111,7 @@ object SpiderSpawnManager {
         janitorTimer = 0
         stateLoaded = false     // the next world loads its own kill record
         killCount = 0
+        wardedPlayers.clear()
     }
 
     // ---- Permadeath: the one thing that must outlive the session -----------------------------
@@ -178,8 +181,134 @@ object SpiderSpawnManager {
     private var strandedTicks = 0
     private const val STRANDED_GRACE_TICKS = 200   // 10s
 
+    // ---- Dimension filtering -----------------------------------------------------------------
+    // spawnDimensions / blockedDimensions decide WHERE the hunt is allowed to happen - the most
+    // asked-for control after spawn timing ("can I make it Overworld-only?"). Both are read live,
+    // so they can be retuned with /spider config without a restart, and both default to EMPTY =
+    // every dimension, which is exactly what every earlier version did.
+    //
+    // This gates NATURAL spawning and dimension FOLLOWING only. Spawn eggs and
+    // /spider newinstance stay unrestricted on purpose (the same exemption permadeath makes), so
+    // an admin can still summon one anywhere.
+
+    // Re-parsing two strings for every online player every tick would be silly: parse only when
+    // the config text actually changes.
+    private var dimCacheKey: String? = null
+    private var dimAllowList: List<String> = emptyList()
+    private var dimBlockList: List<String> = emptyList()
+
+    /** Forgiving id parse: whitespace and case don't matter, a bare "overworld" is read as
+     *  "minecraft:overworld", and "nether"/"end" are accepted for the two everyone shortens. */
+    private fun parseDimensionList(raw: String): List<String> =
+        raw.split(',', ';', '\n').mapNotNull { part ->
+            val entry = part.trim().trim('"', '\'').trim().lowercase()
+            if (entry.isEmpty()) return@mapNotNull null
+            val id = when (entry) {
+                "nether" -> "the_nether"
+                "end" -> "the_end"
+                else -> entry
+            }
+            if (id.contains(':')) id else "minecraft:$id"
+        }
+
+    private fun refreshDimensionLists() {
+        val allowRaw = Config.SPAWN_DIMENSIONS.get()
+        val blockRaw = Config.BLOCKED_DIMENSIONS.get()
+        val key = "$allowRaw|$blockRaw"
+        if (key == dimCacheKey) return
+        dimCacheKey = key
+        dimAllowList = parseDimensionList(allowRaw)
+        dimBlockList = parseDimensionList(blockRaw)
+    }
+
+    /** May the spider naturally spawn in - or follow players into - this dimension? */
+    fun dimensionAllowed(level: ServerLevel): Boolean {
+        refreshDimensionLists()
+        if (dimAllowList.isEmpty() && dimBlockList.isEmpty()) return true   // unconfigured: allow
+        val id = level.dimensionId()
+        if (id in dimBlockList) return false          // the block list always wins
+        return dimAllowList.isEmpty() || id in dimAllowList
+    }
+
+    /** Only players standing somewhere the spider is allowed to hunt count as spawn anchors. */
+    private fun eligiblePlayers(server: MinecraftServer): List<ServerPlayer> {
+        val players = server.playerList.players
+        if (players.isEmpty()) return players
+        refreshDimensionLists()
+        val allowed =
+            if (dimAllowList.isEmpty() && dimBlockList.isEmpty()) players
+            else players.filter { dimensionAllowed(it.level() as ServerLevel) }
+        // A player standing inside a warding idol is not an anchor: the hunt never starts on them.
+        return allowed.filter { !WardRegistry.isProtected(it.level() as ServerLevel, it.x, it.z) }
+    }
+
+    /** Normalise what an admin typed into `/spider config spawnDimensions set ...`. A greedy
+     *  string argument can never be genuinely empty, so "*", "all", "any" and "none" all mean
+     *  "no restriction" - otherwise there is no way to switch the filter back off in-game. */
+    fun normalizeDimensionInput(raw: String): String {
+        val trimmed = raw.trim().trim('"', '\'').trim()
+        return if (trimmed.lowercase() in setOf("*", "all", "any", "none")) "" else trimmed
+    }
+
+    // ---- Warding idols -----------------------------------------------------------------------
+    // A ward protects a PLACE. Players inside one stop being spawn anchors (see eligiblePlayers),
+    // and no spawn is ever placed inside one (findSafeSpot). Keeping the living spider out is
+    // SpiderAI's job (the fence and REPEL); this only moves along one that got stuck inside.
+
+    private val wardedPlayers = mutableSetOf<UUID>()
+
+    /**
+     * Refill whatever countdown is currently armed. Stepping into a ward should mean the hunt
+     * restarts from the top when you leave, not that it resumes mid-way and jumps you at the door.
+     */
+    private fun rearmCurrentSchedule() {
+        if (respawnTimer < 0) return
+        val total = when (scheduleKind) {
+            ScheduleKind.FIRST_SPAWN -> rollRespawnDelay()
+            ScheduleKind.KILL_COOLDOWN -> killRespawnTicks()
+            ScheduleKind.PEACEFUL_EXIT ->
+                (Config.PEACEFUL_EXIT_SPAWN_MINUTES.get() * 1200.0).toInt().coerceAtLeast(1)
+            else -> return
+        }
+        respawnTimer = total
+        scheduleElapsed = 0
+    }
+
+    /** Watch for players crossing INTO a ward, and refill the countdown when they do. */
+    private fun tickWardEntries(server: MinecraftServer) {
+        if (!Config.WARD_ENABLED.get()) {
+            wardedPlayers.clear()
+            return
+        }
+        for (player in server.playerList.players) {
+            val level = player.level() as ServerLevel
+            val inside = WardRegistry.isProtected(level, player.x, player.z)
+            val was = wardedPlayers.contains(player.uuid)
+            if (inside && !was) {
+                wardedPlayers.add(player.uuid)
+                rearmCurrentSchedule()
+            } else if (!inside && was) {
+                wardedPlayers.remove(player.uuid)
+            }
+        }
+    }
+
+    /**
+     * Move a spider out of a ward it wandered into. Discarded ALIVE and detached first, exactly
+     * like the dimension follow, so it can never read as a kill: no trophy, no 40-minute
+     * cooldown, no permadeath tick.
+     */
+    private fun evictFromWard(server: MinecraftServer, oldSpider: SpiderMob) {
+        val players = eligiblePlayers(server)
+        current = null
+        oldSpider.discard()
+        if (players.isEmpty() || !trySpawnNear(players.random())) arm(RETRY_TICKS, ScheduleKind.RETRY)
+    }
+
     fun tick(server: MinecraftServer) {
         janitorSweep(server)
+        WardRegistry.sweep(server)
+        tickWardEntries(server)
         if (!stateLoaded) loadState(server)
 
         // Peaceful: monsters don't exist. The mob itself despawns via the vanilla peaceful check;
@@ -198,8 +327,18 @@ object SpiderSpawnManager {
             respawnTimer = -1
             pendingPeacefulExit = false   // it survived peaceful (e.g. was unloaded); nothing owed
 
+            // AREA DENIAL: SpiderAI fences the living spider out of every ward and runs it out of
+            // one it is caught inside. Only a spider stuck in there - walled in, making no
+            // headway - is moved along the old way, alive.
+            if (SpiderAI.repelStalled()) {
+                evictFromWard(server, cur)
+                return
+            }
+
             val hasCompany = cur.level().players().isNotEmpty()
-            val anyPlayers = server.playerList.players.isNotEmpty()
+            // "Anyone to follow?" means anyone in a dimension the spider is ALLOWED to hunt in:
+            // with spawnDimensions set it never follows players into a dimension it can't spawn in.
+            val anyPlayers = eligiblePlayers(server).isNotEmpty()
             if (!hasCompany && anyPlayers) {
                 if (++abandonedTicks >= FOLLOW_GRACE_TICKS) {
                     abandonedTicks = 0
@@ -255,8 +394,10 @@ object SpiderSpawnManager {
             return
         }
 
-        val players = server.playerList.players
-        if (players.isEmpty()) return   // no one to spawn near; pause the timer
+        // No one to spawn near - nobody online, or everyone is somewhere spawnDimensions /
+        // blockedDimensions rules out. Pause the timer rather than burn it.
+        val players = eligiblePlayers(server)
+        if (players.isEmpty()) return
 
         // Peaceful was just switched off. Fast-track (default 1 minute) ONLY when nothing is
         // already scheduled — i.e. the spider vanished because of Peaceful itself. A spider
@@ -283,7 +424,7 @@ object SpiderSpawnManager {
     }
 
     private fun relocateNear(server: MinecraftServer, lastSpider: SpiderMob) {
-        val players = server.playerList.players
+        val players = eligiblePlayers(server)
         if (players.isEmpty()) { arm(RETRY_TICKS, ScheduleKind.RETRY); return }
         val nearest = players.minByOrNull { it.distanceToSqr(lastSpider.x, lastSpider.y, lastSpider.z) } ?: return
         if (!spawnNear(server, nearest)) arm(RETRY_TICKS, ScheduleKind.RETRY)
@@ -298,7 +439,7 @@ object SpiderSpawnManager {
      * Dimensional Doors, anything.
      */
     private fun followToPlayer(server: MinecraftServer, oldSpider: SpiderMob) {
-        val players = server.playerList.players
+        val players = eligiblePlayers(server)
         if (players.isEmpty()) return
         current = null            // detach BEFORE discarding so the removal isn't read as a kill
         oldSpider.discard()       // alive -> no trophy (see SpiderMob.remove)
@@ -423,6 +564,8 @@ object SpiderSpawnManager {
             val angle = phase + (2.0 * PI / angles) * i
             val x = player.x + cos(angle) * distance
             val z = player.z + sin(angle) * distance
+            // Never drop one inside a ward, even when anchoring on an unprotected player nearby.
+            if (WardRegistry.isProtected(level, x, z)) return@repeat
             val y = SafeGroundFinder.groundYAt(level, x, z, refY = player.y)
             if (y != null) return Triple(x, y, z)
         }

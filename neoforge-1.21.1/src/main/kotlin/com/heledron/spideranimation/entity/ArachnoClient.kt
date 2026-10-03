@@ -4,6 +4,7 @@ import com.heledron.spideranimation.SpiderAnimationMod
 import net.minecraft.client.renderer.entity.NoopRenderer
 import net.neoforged.bus.api.IEventBus
 import net.neoforged.neoforge.client.event.EntityRenderersEvent
+import net.neoforged.neoforge.network.PacketDistributor
 
 /**
  * Client-only setup. This object references client-only classes (NoopRenderer, the client render
@@ -17,6 +18,11 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent
 object ArachnoClient {
     fun register(modBus: IEventBus) {
         modBus.addListener(::onRegisterRenderers)
+    }
+
+    /** The config book's snapshot arrived (see ConfigBookNet): open or refresh the settings screen. */
+    fun receiveConfigBook(data: String) {
+        ConfigBookScreen.receive(data) { request -> PacketDistributor.sendToServer(ConfigBookNet.ToServer(request)) }
     }
 
     private fun onRegisterRenderers(event: EntityRenderersEvent.RegisterRenderers) {
