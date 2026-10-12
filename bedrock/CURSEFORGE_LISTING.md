@@ -218,3 +218,4 @@ For anything not covered here, ask: **@iR3DN4X**.
 
 *   **[NetherySiloX](https://www.curseforge.com/members/netherysilox/projects)** — designed and prototyped the **safe spawning system**, the **wander → alert → chase AI**, and the in-game settings system that became `/spiderconfig` on Bedrock. Thank you! 🕷️
 *   **ggfelle** aka @ vayne on Discord, for bug tests, the Nether and Overworld fixes, and getting the spider through 2×1 holes and corridors. Thank you! 🕷️
+*   **Pronk** aka @ pronk.1 on Discord, for helping move the mod's release forward. Thank you! 🕷️
