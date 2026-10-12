@@ -1,0 +1,66 @@
+{
+  "format_version": "1.21.90",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "arachno:spider",
+      "is_spawnable": true,
+      "is_summonable": true,
+      "properties": {
+        "arachno:variant": { "type": "int", "range": [0, 7], "default": 0, "client_sync": false },
+        "arachno:tamed": { "type": "bool", "default": false, "client_sync": false }
+      }
+    },
+    "component_groups": {
+      "arachno:saddle": {
+        "minecraft:rideable": {
+          "seat_count": 1,
+          "family_types": [ "player" ],
+          "interact_text": "action.interact.ride.horse",
+          "crouching_skip_interact": true,
+          "pull_in_entities": false,
+          "seats": { "position": [ 0.0, 0.7, 0.0 ] }
+        }
+      }
+    },
+    "components": {
+      "minecraft:type_family": { "family": [ "arachno_spider", "monster", "mob" ] },
+      "minecraft:health": { "value": 600, "max": 100000 },
+      "minecraft:collision_box": { "width": 0.01, "height": 0.01 },
+      "minecraft:custom_hit_test": { "hitboxes": [ { "width": 2.0, "height": 2.0, "pivot": [ 0.0, 0.0, 0.0 ] } ] },
+      "minecraft:physics": { "has_gravity": false, "has_collision": false },
+      "minecraft:pushable": { "is_pushable": false, "is_pushable_by_piston": false },
+      "minecraft:knockback_resistance": { "value": 1.0 },
+      "minecraft:breathable": { "breathes_air": true, "breathes_water": true, "breathes_lava": true, "breathes_solids": true },
+      "minecraft:damage_sensor": {
+        "triggers": [
+          { "cause": "fall", "deals_damage": "no" },
+          { "cause": "suffocation", "deals_damage": "no" },
+          { "cause": "fly_into_wall", "deals_damage": "no" }
+        ]
+      },
+      "minecraft:loot": { "table": "loot_tables/entities/arachno_spider.json" },
+      "minecraft:experience_reward": { "on_death": "query.last_hit_by_player ? 5 : 0" },
+      "minecraft:nameable": {},
+      "minecraft:interact": {
+        "interactions": [
+          {
+            "on_interact": {
+              "filters": { "test": "has_equipment", "subject": "other", "domain": "hand", "value": "arachno:spider_tamer" },
+              "event": "arachno:tamer_used",
+              "target": "self"
+            },
+            "interact_text": "action.interact.tame"
+          }
+        ]
+      },
+      "minecraft:persistent": {}
+    },
+    "events": {
+      "arachno:tamed": { "add": { "component_groups": [ "arachno:saddle" ] } },
+      "arachno:tamer_used": {
+        "set_property": { "arachno:tamed": true },
+        "add": { "component_groups": [ "arachno:saddle" ] }
+      }
+    }
+  }
+}

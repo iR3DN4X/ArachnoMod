@@ -5,7 +5,8 @@
 This mod is **source-available freeware**: free to download and play, forever — but not
 open-source, and not free to re-use commercially.
 
-This license applies to **all versions and loaders** of ArachnoMod (Fabric, NeoForge, Forge).
+This license applies to **all versions and loaders** of ArachnoMod (Fabric, NeoForge, Forge)
+and to the Bedrock Edition add-on.
 The license bundled with the latest release is the license in force — it is your responsibility
 to check the license bundled with the newest update.
 
@@ -31,9 +32,9 @@ All remaining content not belonging to Mojang/Microsoft or the above is the prop
 - Re-use this mod's assets or code **commercially** anywhere else.
 - **Port or re-release this mod** for other Minecraft versions, loaders, platforms, games, or
   media — official ports are made by me and planned ahead. If you want one, ask.
-- **Rehost or redistribute the mod files** outside CurseForge. If you downloaded this jar
-  anywhere else, it may be modified or malicious — the only official source is my CurseForge
-  page.
+- **Rehost or redistribute the mod files** outside CurseForge. If you downloaded this jar or
+  add-on anywhere else, it may be modified or malicious — the only official sources are my
+  CurseForge pages.
 
 ---
 

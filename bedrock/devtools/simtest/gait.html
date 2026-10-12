@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gait measurements</title>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<pre id="out">running...</pre>
+<script type="module">
+  // The pack's real main.js chasing a player who walks away at ?speed= blocks/s (default 4.8,
+  // the user's clip), starting ?gap= blocks ahead. Measures the ENGINE's gait - the same maths as
+  // the Java mod - per leg: steps, step length, foot slip while planted, how stretched the leg
+  // gets, and how much the body and hips bob. Steady state only (after the first 100 ticks).
+  const out = document.getElementById("out");
+  const params = new URLSearchParams(location.search);
+  const SPEED = Number(params.get("speed") || 4.8) / 20;   // blocks per tick
+  const GAP = Number(params.get("gap") || 3);
+  const TICKS = 400, SETTLE = 100;
+  const report = { playerSpeedBlocksPerSecond: SPEED * 20 };
+  try {
+    const { __test, FLOOR } = await import("@minecraft/server");
+    const T = __test;
+    if (params.get("ramp") !== null) { const { setComfortRecovery } = await import("/engine/behaviour.js"); setComfortRecovery(Number(params.get("ramp"))); }
+    const { __spiders } = await import("/main.js");
+    T.player.location = { x: 0.5, y: FLOOR, z: 0.5 };
+    T.setView({ x: 1, y: 0, z: 0 });
+    T.fire("arachno:spawn");
+    T.player.location = { x: 6.5 + GAP, y: FLOOR, z: 0.5 };
+    const s = __spiders[0];
+    if (params.get("java") === "1") s.body.javaWalk = true;   // Java's exact walk + support rules
+    if (params.get("norender") === "1") s.renderer.render = () => {};
+    if (params.get("nopath") === "1") { const { CONFIG } = await import("/mob.js"); CONFIG.chasePathfinding = false; }
+    const b = s.body;
+    T.tick(1);   // the body builds its legs on its first update
+    const legs = b.legs;
+    const slipLog = [];
+    const prefLog = [];
+    { const origPref = b.calcPreferredY.bind(b); b.calcPreferredY = () => { const r = origPref(); if (b.position.y - FLOOR < 0.5 && prefLog.length < 30) { const lerped = b.lerpedGait(); const avgT = b.legs.reduce((a, l) => a + l.target.position.y, 0) / b.legs.length - FLOOR; prefLog.push(`y=${(b.position.y - FLOOR).toFixed(3)} pref=${(r - FLOOR).toFixed(3)} avgTargetY=${avgT.toFixed(3)} bodyH=${lerped.bodyHeight.toFixed(3)} targetsY=[${b.legs.map((l) => (l.target.position.y - FLOOR).toFixed(2)).join(",")}] vel=${b.velocity.length().toFixed(3)} max=${b.gait.maxSpeed.toFixed(3)}`); } return r; }; }
+    legs.forEach((l, i) => {
+      const orig = l.updateMovement.bind(l);
+      l.updateMovement = () => {
+        const before = l.endEffector.copy(), wasG = l.isGrounded(), wasM = l.isMoving;
+        const reach = l.legPlan.segments.reduce((a, sg) => a + sg.length, 0);
+        const dBefore = before.distance(l.attachmentPosition) / reach;
+        orig();
+        const moved = l.endEffector.distance(before);
+        if (wasG && !wasM && l.isGrounded() && !l.isMoving && moved > 0.05 && slipLog.length < 12)
+          slipLog.push(`leg${i} moved ${moved.toFixed(3)} stretchBefore=${dBefore.toFixed(3)} stretchAfter=${(l.endEffector.distance(l.attachmentPosition) / reach).toFixed(3)} dy=${(l.endEffector.y - before.y).toFixed(3)} bodyVel=${(b.velocity.horizontalLength() * 20).toFixed(2)} bodyY=${(b.position.y - FLOOR).toFixed(3)} onG=${b.onGround} ticksOff=${l.ticksOffGround}`);
+      };
+    });
+    const st = legs.map(() => ({ steps: 0, moving: 0, slipMax: 0, slipSum: 0, slipN: 0, stretchMax: 0, stepLens: [], lastPlant: null, wasMoving: false, prevFoot: null, prevGrounded: false }));
+    const bodyY = [], hipY = [], speeds = [];
+    for (let t = 1; t <= TICKS; t++) {
+      if (t > 20) T.player.location = { x: T.player.location.x + SPEED, y: FLOOR, z: 0.5 };
+      T.tick(1);
+      { const yy = b.position.y - FLOOR; if (yy < 0.5 && (report.drops || (report.drops = [])).length < 40) report.drops.push(`t=${t} y=${yy.toFixed(3)} vy=${b.velocity.y.toFixed(3)} gnd=${b.legs.filter((l) => l.isGrounded()).length} touch=${b.legs.filter((l) => l.touchingGround).length} mov=${b.legs.filter((l) => l.isMoving).length} onG=${b.onGround} pin=${b.activePinY} sq=${b.squeezeTargetY} mode=${s.ai.mode} d=${b.position.horizontalDistance(T.player.location).toFixed(2)}`); }
+      if (t <= SETTLE) { legs.forEach((l, i) => { st[i].prevFoot = l.endEffector.copy(); st[i].prevGrounded = l.isGrounded(); st[i].wasMoving = l.isMoving; }); continue; }
+      bodyY.push(b.position.y - FLOOR);
+      if (t <= SETTLE + 60) (report.trace = report.trace || []).push(`${t} sz=${b.sizeScale.toFixed(3)} ss=${b.speedScale.toFixed(3)} max=${(b.gait.maxSpeed * 20).toFixed(2)} d=${b.position.horizontalDistance(T.player.location).toFixed(2)} y=${(b.position.y - FLOOR).toFixed(3)} vy=${b.velocity.y.toFixed(3)} v=${(b.velocity.horizontalLength() * 20).toFixed(2)} gnd=${legs.filter((l) => l.isGrounded()).length} mov=${legs.filter((l) => l.isMoving).length} onG=${b.onGround}`);
+      hipY.push(legs.reduce((a, l) => a + l.chain.root.y, 0) / legs.length - FLOOR);
+      speeds.push(b.velocity.horizontalLength() * 20);
+      legs.forEach((l, i) => {
+        const S = st[i];
+        const foot = l.endEffector;
+        const grounded = l.isGrounded();
+        if (grounded && S.prevGrounded && !l.isMoving && !S.wasMoving) {
+          const slip = foot.distance(S.prevFoot);
+          S.slipMax = Math.max(S.slipMax, slip); S.slipSum += slip; S.slipN++;
+        }
+        if (l.isMoving) S.moving++;
+        if (l.isMoving && !S.wasMoving) { S.steps++; S.liftFrom = foot.copy(); }
+        if (!l.isMoving && S.wasMoving && S.liftFrom) S.stepLens.push(foot.horizontalDistance(S.liftFrom));
+        const total = l.legPlan.segments.reduce((a, sg) => a + sg.length, 0);
+        S.stretchMax = Math.max(S.stretchMax, l.chain.root.distance(foot) / total);
+        S.prevFoot = foot.copy(); S.prevGrounded = grounded; S.wasMoving = l.isMoving;
+      });
+    }
+    const secs = (TICKS - SETTLE) / 20;
+    const range = (a) => +(Math.max(...a) - Math.min(...a)).toFixed(3);
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    report.size = +b.sizeScale.toFixed(2);
+    report.spiderSpeedMean = +mean(speeds).toFixed(2);
+    report.bodyHeight = { mean: +mean(bodyY).toFixed(3), peakToPeak: range(bodyY), wantStanding: +b.walkGait.stationary.bodyHeight.toFixed(3) };
+    report.hipHeightPeakToPeak = range(hipY);
+    report.legs = st.map((S, i) => ({
+      leg: i, stepsPerSecond: +(S.steps / secs).toFixed(2), fractionStepping: +(S.moving / (TICKS - SETTLE)).toFixed(2),
+      stepLength: S.stepLens.length ? +mean(S.stepLens).toFixed(2) : 0,
+      slipWhilePlanted: { max: +S.slipMax.toFixed(4), mean: S.slipN ? +(S.slipSum / S.slipN).toFixed(4) : 0 },
+      maxStretch: +S.stretchMax.toFixed(2),
+    }));
+    report.slipLog = slipLog;
+    report.prefLog = prefLog;
+    report.errors = T.errors;
+  } catch (e) {
+    report.crash = String(e) + "\n" + (e.stack || "");
+  }
+  out.textContent = JSON.stringify(report, null, 1);
+</script>

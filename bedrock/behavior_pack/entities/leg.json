@@ -1,0 +1,51 @@
+{
+  "format_version": "1.21.90",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "arachno:leg",
+      "is_spawnable": false,
+      "is_summonable": true,
+      "properties": {
+        "arachno:x0": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:y0": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:z0": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:a0": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:p0": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:r0": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:l0": { "type": "float", "range": [0.0, 256.0], "default": 0.0, "client_sync": true },
+        "arachno:t0": { "type": "float", "range": [0.0, 64.0], "default": 0.0, "client_sync": true },
+        "arachno:x1": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:y1": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:z1": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:a1": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:p1": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:r1": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:l1": { "type": "float", "range": [0.0, 256.0], "default": 0.0, "client_sync": true },
+        "arachno:t1": { "type": "float", "range": [0.0, 64.0], "default": 0.0, "client_sync": true },
+        "arachno:x2": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:y2": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:z2": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:a2": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:p2": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:r2": { "type": "float", "range": [-360.0, 360.0], "default": 0.0, "client_sync": true },
+        "arachno:l2": { "type": "float", "range": [0.0, 256.0], "default": 0.0, "client_sync": true },
+        "arachno:t2": { "type": "float", "range": [0.0, 64.0], "default": 0.0, "client_sync": true },
+        "arachno:x3": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:y3": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:z3": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:tex": { "type": "int", "range": [0, 1023], "default": 0, "client_sync": true }
+      }
+    },
+    "components": {
+      "minecraft:physics": { "has_gravity": false, "has_collision": false },
+      "minecraft:collision_box": { "width": 0.01, "height": 0.01 },
+      "minecraft:pushable": { "is_pushable": false, "is_pushable_by_piston": false },
+      "minecraft:knockback_resistance": { "value": 1.0 },
+      "minecraft:fire_immune": true,
+      "minecraft:damage_sensor": { "triggers": [ { "cause": "all", "deals_damage": "no" } ] },
+      "minecraft:health": { "value": 1000, "max": 1000 },
+      "minecraft:body_rotation_always_follows_head": {},
+      "minecraft:type_family": { "family": [ "arachno_leg", "inanimate" ] }
+    }
+  }
+}

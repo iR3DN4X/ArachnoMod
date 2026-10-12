@@ -1,0 +1,256 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mob checks</title>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<pre id="out">running...</pre>
+<script type="module">
+  // The spider as a MOB (the Java mod's v1.0-v1.2 features) through the real main.js over the stub:
+  // one ?case= per page load (mobsuite.html runs them all). Each case prints PASS/FAIL lines.
+  const out = document.getElementById("out");
+  const params = new URLSearchParams(location.search);
+  const CASE = params.get("case") || "spawn";
+  const lines = [];
+  const check = (name, ok, detail = "") => lines.push(`${ok ? "PASS" : "FAIL"} ${name}${detail ? "  (" + detail + ")" : ""}`);
+  try {
+    const { __test: T, FLOOR: F } = await import("@minecraft/server");
+    const main = await import("/main.js");
+    const { setConfig, CONFIG } = await import("/config.js");
+    const { TEXTURES } = await import("/camo_table.js");
+    const sm = main.__spawnManager;
+    const spiders = () => [...main.__controllers.values()];
+    const live = (type) => T.MockEntity.all.filter((e) => e.isValid && e.typeId === type);
+    const hdist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+    T.player.location = { x: 0.5, y: F, z: 0.5 };
+    T.setView({ x: 1, y: 0, z: 0 });
+    const spawnHere = (variant = "") => { T.fire("arachno:spawn", variant); return spiders()[spiders().length - 1]; };
+
+
+    if (CASE === "spawn") {
+      T.tick(1);
+      check("no spider at first", spiders().length === 0);
+      check("first-spawn timer ~1 minute", sm.respawnTimer >= 1199 && sm.respawnTimer <= 1201, `timer=${sm.respawnTimer}`);
+      T.tick(1210);
+      const s = spiders()[0];
+      check("a spider spawned about a minute in", spiders().length === 1 && live("arachno:spider").length === 1);
+      if (s) {
+        const d = hdist(s.entity.location, T.player.location);
+        check("spawned 30-34 blocks away", d >= 29.9 && d <= 34.1, `d=${d.toFixed(1)}`);
+        check("legs drawn", s.renderer.liveCount() === s.body.legs.length, `${s.renderer.liveCount()}/${s.body.legs.length}`);
+        check("health = variant max", Math.abs(s.entity.getComponent("minecraft:health").currentValue - (s.variant === "camo" ? 600 : 350)) < 1e-6, `${s.variant} hp=${s.entity.getComponent("minecraft:health").currentValue}`);
+        const at = s.entity.location, b = s.body.position;
+        check("hitbox follows the body", Math.hypot(at.x - b.x, at.y - b.y, at.z - b.z) < 1e-3);
+      }
+    } else if (CASE === "chasebite") {
+      const s = spawnHere();
+      const biteTicks = [];
+      for (let t = 1; t <= 600; t++) { const before = T.player.bites; T.tick(1); if (T.player.bites > before) biteTicks.push(t); }
+      check("it hunts you down and bites", biteTicks.length >= 2, `bites at ${biteTicks.slice(0, 5).join(",")}`);
+      const gaps = biteTicks.slice(1).map((t, i) => t - biteTicks[i]);
+      check("one bite every 3 s (attackCooldownTicks 60)", gaps.length > 0 && gaps.every((g) => g >= 60), `gaps ${gaps.slice(0, 5).join(",")}`);
+      check("bite is 6 hearts (12) as an entity attack", T.log.some((l) => l.startsWith("player hurt 12 (entityAttack) by arachno:spider")));
+      T.player.location = { x: 400.5, y: F, z: 0.5 };
+      const bites0 = T.player.bites;
+      T.tick(200);
+      check("no bite out of reach", T.player.bites === bites0);
+    } else if (CASE === "armour") {
+      const n = spawnHere();
+      T.tick(2);
+      const hp = () => n.entity.getComponent("minecraft:health").currentValue;
+      let h0 = hp(); n.entity.applyDamage(7, { cause: "entityAttack" });
+      check("netherite suit soaks a sword hit (7 -> ~1.79)", Math.abs((h0 - hp()) - 1.792) < 0.01, `took ${(h0 - hp()).toFixed(3)}`);
+      h0 = hp(); n.entity.applyDamage(4, { cause: "lava" });
+      check("netherite takes no lava damage", hp() === h0);
+      h0 = hp(); n.entity.applyDamage(4, { cause: "magic" });
+      check("armour doesn't stop magic", Math.abs((h0 - hp()) - 4) < 1e-9);
+      h0 = hp(); n.entity.applyDamage(5, { cause: "fall" });
+      check("no fall damage", hp() === h0);
+      const c = spawnHere("camo");
+      T.tick(2);
+      const hc = () => c.entity.getComponent("minecraft:health").currentValue;
+      check("camo has 600 hp", hc() === 600);
+      let c0 = hc(); c.entity.applyDamage(7, { cause: "entityAttack" });
+      check("camo takes the full hit", Math.abs((c0 - hc()) - 7) < 1e-9);
+      c0 = hc(); c.entity.applyDamage(4, { cause: "lava" });
+      check("camo burns in lava", Math.abs((c0 - hc()) - 4) < 1e-9);
+      c.entity.fireTicks = 100;
+      const p0 = T.counts.particles || 0;
+      T.tick(9);
+      check("a burning camo shows flames", (T.counts.particles || 0) - p0 >= 3, `${(T.counts.particles || 0) - p0} particles`);
+    } else if (CASE === "kill") {
+      setConfig("netheriteDropChance", 1);
+      const s = spawnHere();
+      T.tick(40);
+      const legEntities = live("arachno:leg").length;
+      s.entity.applyDamage(100000, { cause: "entityAttack" });
+      T.tick(2);
+      check("controller gone after death", spiders().length === 0);
+      const item = T.log.find((l) => l.startsWith("item minecraft:netherite_ingot"));
+      check("netherite trophy dropped", !!item, item || "none");
+      const y = item ? parseFloat(item.split(",")[1]) : NaN;
+      check("trophy on the floor beneath the body", Math.abs(y - (F + 0.25)) < 0.01, `y=${y} floor=${F}`);
+      check("legs removed", live("arachno:leg").length === 0, `had ${legEntities}`);
+      check("next spider in 40 minutes", sm.respawnTimer >= 47990 && sm.respawnTimer <= 48000, `timer=${sm.respawnTimer}`);
+      const w = (await import("@minecraft/server")).world;
+      w.difficulty = "Peaceful"; T.tick(5); w.difficulty = "Normal"; T.tick(2);
+      check("Peaceful can't shortcut a kill's cooldown", sm.respawnTimer > 47000, `timer=${sm.respawnTimer}`);
+    } else if (CASE === "peaceful") {
+      const w = (await import("@minecraft/server")).world;
+      spawnHere();
+      T.tick(5);
+      w.difficulty = "Peaceful";
+      T.tick(3);
+      check("Peaceful removes it", spiders().length === 0 && live("arachno:spider").length === 0 && live("arachno:leg").length === 0);
+      T.tick(2000);
+      check("no spawns during Peaceful", spiders().length === 0);
+      w.difficulty = "Normal";
+      T.tick(2);
+      check("returns ~1 minute after peace ends", sm.respawnTimer >= 1195 && sm.respawnTimer <= 1200, `timer=${sm.respawnTimer}`);
+      T.tick(1220);
+      check("...and it does", spiders().length === 1);
+    } else if (CASE === "tame") {
+      const s = spawnHere();
+      T.tick(2);
+      const ev = T.interact(s.entity, "arachno:spider_tamer");
+      T.tick(1);
+      check("Spider Tamer tames it", s.tamed && ev.cancel && s.entity.groups.has("arachno:saddle"));
+      check("tamed: hearts + level-up sound", (T.counts.particles || 0) >= 9 && T.log.includes("sound random.levelup"));
+      const bites0 = T.player.bites;
+      T.tick(400);
+      check("a tamed spider never bites", T.player.bites === bites0);
+      T.interact(s.entity, null);
+      T.tick(1);
+      check("empty hand climbs on", s.currentRider() === T.player);
+      T.tick(60);
+      check("ridden: it shrinks to riddenSize 2", Math.abs(s.body.sizeScale - 2) < 0.05, `size ${s.body.sizeScale.toFixed(2)}`);
+      const x0 = s.body.position.x;
+      T.player.move = { x: 0, y: 1 };   // forward, looking +x
+      T.tick(60);
+      check("forward walks it where you look (+x)", s.body.position.x - x0 > 3, `moved ${(s.body.position.x - x0).toFixed(1)}`);
+      const z0 = s.body.position.z;
+      T.player.move = { x: 1, y: 0 };   // strafe left: looking +x, left is -z
+      T.tick(40);
+      check("strafe moves it sideways", Math.abs(s.body.position.z - z0) > 2, `dz ${(s.body.position.z - z0).toFixed(1)}`);
+      T.player.move = { x: 0, y: 0 };
+      // a teleport that knocks the rider off: they are put back unless sneaking
+      s.entity.riders = []; T.player.ridingOn = null;
+      T.tick(2);
+      check("re-seated after an accidental dismount", s.currentRider() === T.player);
+      s.entity.riders = []; T.player.ridingOn = null; T.player.isSneaking = true;
+      T.tick(2);
+      check("sneaking gets you off for good", s.currentRider() === null);
+      // the data-driven path: the entity's own interaction sets the property, the script follows
+      const s2 = spawnHere();
+      T.tick(2);
+      s2.entity.triggerEvent("arachno:tamer_used");
+      T.tick(2);
+      check("tamed via the entity's own interaction too", s2.tamed);
+    } else if (CASE === "camo") {
+      // The user's test floor: stripes of grass, light-blue stained glass, lapis, coal and sand.
+      const stripes = ["grass_block", "light_blue_stained_glass", "lapis_block", "coal_block", "sand"];
+      for (let x = -40; x <= 80; x++) for (let z = -20; z <= 20; z++) T.set(x, F - 1, z, stripes[((Math.floor(x / 3) % 5) + 5) % 5]);
+      const { camoFor, blockUnder } = await import("/camo.js");
+      const s = spawnHere("camo");
+      check("camo spawns mossy", s.variant === "camo" && s.body.legTex === null);
+      let ticks = 0, mismatched = 0;
+      const seen = new Set();
+      for (let t = 0; t < 300; t++) {
+        T.player.location = { x: 0.5 + t * 0.2, y: F, z: 0.5 };   // walk away: it crosses every stripe
+        T.tick(1);
+        if (!s.body.legTex) continue;
+        s.body.legs.forEach((leg, i) => {
+          const id = blockUnder(s.level.blocks, leg.endEffector);
+          if (!id || !leg.isGrounded()) return;
+          ticks++;
+          seen.add(id);
+          if (s.body.legTex[i] !== camoFor(id).tex) mismatched++;
+        });
+      }
+      check("every planted leg wears the block under its foot", ticks > 500 && mismatched === 0, `${mismatched} wrong of ${ticks} leg-ticks; stood on ${[...seen].join(",")}`);
+      const expect = { grass_block: "textures/blocks/grass_carried", light_blue_stained_glass: "textures/blocks/glass_light_blue",
+        lapis_block: "textures/blocks/lapis_block", coal_block: "textures/blocks/coal_block", sand: "textures/blocks/sand" };
+      for (const [id, path] of Object.entries(expect)) check(`${id} -> ${path}`, TEXTURES[camoFor(id).tex] === path, TEXTURES[camoFor(id).tex]);
+      const legs = live("arachno:leg");
+      const sent = s.renderer.entities.map((e) => e.props["arachno:tex"]);
+      check("each leg entity is sent its own texture", legs.length > 0 && sent.every((v, i) => v === s.body.legTex[i]), `sent ${sent.join(",")} want ${s.body.legTex.join(",")}`);
+      const steps = new Set(T.log.filter((l) => l.startsWith("sound step.")).map((l) => l.slice(6)));
+      check("footsteps are each block's own sound (grass, stone for glass/lapis/coal, sand)", steps.has("step.grass") && steps.has("step.stone") && steps.has("step.sand"), [...steps].join(","));
+      check("no netherite clank from a camo", !steps.has("step.netherite"));
+      const n = spawnHere();
+      T.tick(20);
+      check("netherite legs stay netherite", live("arachno:leg").every((e) => e.props["arachno:tex"] === 0));
+    } else if (CASE === "onlyone") {
+      const a = spawnHere();
+      T.tick(2);
+      const b = spawnHere();
+      T.tick(2);
+      check("a second spider replaces the first", !a.entity.isValid && b.entity.isValid && spiders().length === 1);
+      check("old legs gone", live("arachno:leg").length === b.body.legs.length, `${live("arachno:leg").length} legs`);
+      // a leftover spider loaded from an old save is removed
+      const old = new T.MockEntity("arachno:spider", { x: 5, y: F, z: 5 }, T.dim);
+      for (const fn of T.after.entityLoad.subs) fn({ entity: old });
+      check("leftover from a previous session removed", !old.isValid && spiders().length === 1);
+    } else if (CASE === "lost") {
+      const s = spawnHere();
+      T.tick(5);
+      s.entity.isValid = false;   // its chunk unloaded under it: gone, not dead
+      T.tick(3);
+      const now = spiders();
+      check("a fresh spider appears near you at once", now.length === 1 && now[0] !== s, `${now.length}`);
+      if (now[0]) { const d = hdist(now[0].entity.location, T.player.location); check("...30-34 blocks away", d >= 29.9 && d <= 34.1, `d=${d.toFixed(1)}`); }
+      check("no kill cooldown", sm.respawnTimer < 0);
+    } else if (CASE === "commands") {
+      check("both commands registered", !!T.commands["arachno:spider"] && !!T.commands["arachno:spiderconfig"], Object.keys(T.commands).join(","));
+      let r = T.command("arachno:spider", "newinstance");
+      check("newinstance refused outside creative", r.status === 1, r.message);
+      T.player.gameMode = "Creative";
+      r = T.command("arachno:spider", "newinstance", 1.5);
+      T.tick(2);
+      check("newinstance in creative", r.status === 0 && live("arachno:leg").length === 8, r.message);
+      r = T.command("arachno:spider", "size", 3);
+      T.tick(2);
+      check("/spider size", r.status === 0, r.message);
+      T.player.location = { x: 20.5, y: F, z: 0.5 };
+      T.tick(200);
+      const legs = live("arachno:leg");
+      const hips = legs.map((e) => e.location.x + e.props["arachno:x0"]);
+      check("the personal spider follows you", hips.length && Math.min(...hips) > 8, `hip x ${Math.min(...hips).toFixed(1)}`);
+      r = T.command("arachno:spider", "release");
+      T.tick(2);
+      check("/spider release", r.status === 0 && live("arachno:leg").length === 0, r.message);
+      T.player.gameMode = "Survival";
+      T.tick(2);
+      r = T.command("arachno:spiderconfig", "chasedistance", "100");
+      T.tick(1);
+      check("/spiderconfig chaseDistance 100", r.status === 0 && CONFIG.chaseDistance === 100, r.message);
+      r = T.command("arachno:spiderconfig", "chasedistance");
+      check("/spiderconfig chaseDistance (show)", r.status === 0 && r.message.includes("= 100"), r.message);
+      r = T.command("arachno:spiderconfig", "chasedistance", "999");
+      check("out-of-range value refused", r.status === 1, r.message);
+      r = T.command("arachno:spiderconfig", "hostileonlyatnight", "true");
+      T.tick(1);
+      check("boolean setting", CONFIG.hostileOnlyAtNight === true, r.message);
+      r = T.command("arachno:spiderconfig", "list");
+      check("/spiderconfig list", r.status === 0 && r.message.split("\n").length > 40);
+      const { world } = await import("@minecraft/server");
+      check("saved with the world", JSON.parse(world.getDynamicProperty("arachno:config")).chaseDistance === 100);
+    } else if (CASE === "groom") {
+      setConfig("enableWandering", false);
+      setConfig("groomingChance", 1);
+      T.player.location = { x: 300.5, y: F, z: 0.5 };   // nobody near: it idles
+      const s = spawnHere();
+      let groomed = 0, breathe = [];
+      for (let t = 0; t < 400; t++) {
+        T.tick(1);
+        if (s.body.groomingTimer > 0) groomed++;
+        if (t > 100) breathe.push(s.body.position.y);
+      }
+      check("an idle spider grooms", groomed > 50, `${groomed} ticks grooming`);
+      check("front legs return to the gait afterwards", s.body.groomingTimer > 0 || (!s.body.legs[0].isDisabled && !s.body.legs[1].isDisabled));
+      check("it breathes (body bobs while still)", Math.max(...breathe) - Math.min(...breathe) > 0.01, `bob ${(Math.max(...breathe) - Math.min(...breathe)).toFixed(3)}`);
+    }
+    check("no API misuse", T.errors.length === 0, T.errors.slice(0, 3).join("; "));
+  } catch (e) {
+    lines.push("CRASH " + e + "\n" + (e.stack || ""));
+  }
+  out.textContent = `case=${CASE}\n` + lines.join("\n");
+</script>

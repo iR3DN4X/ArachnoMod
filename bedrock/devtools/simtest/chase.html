@@ -1,0 +1,158 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Chase over terrain</title>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<pre id="out">running...</pre>
+<script type="module">
+  // The pack's real main.js chasing a player who keeps walking away over ?terrain=dunes|flat
+  // (dunes = rolling sand in 1-block steps, like the beach in the user's 4th clip). Reports what
+  // the size and speed rules did: the size the distance asks for vs the size it got and WHICH cap
+  // held it down, how fast it went, how often the comfort gate slowed it, and the feet.
+  // ?speed= player blocks/s (4.3 = walking), ?gap= start distance, ?java=1 = Java's exact walk rules.
+  const out = document.getElementById("out");
+  const params = new URLSearchParams(location.search);
+  const TERRAIN = params.get("terrain") || "dunes";
+  const SPEED = Number(params.get("speed") || 4.3) / 20;
+  const GAP = Number(params.get("gap") || 12);
+  const TICKS = Number(params.get("ticks") || 600), SETTLE = 60;
+  const report = { terrain: TERRAIN, playerSpeed: SPEED * 20, java: params.get("java") === "1" };
+  try {
+    const { __test, FLOOR } = await import("@minecraft/server");
+    const T = __test, F = FLOOR;
+    const height = (x, z) => TERRAIN === "flat" ? 0
+      : Math.max(0, Math.round(2 + 2 * Math.sin(x * 0.21) + 1.5 * Math.sin(z * 0.27 + x * 0.09) + 0.7 * Math.sin((x + z) * 0.5)));
+    if (TERRAIN !== "flat") {
+      for (let x = -16; x <= 260; x++) for (let z = -48; z <= 48; z++) {
+        const h = height(x, z);
+        for (let y = 0; y < h; y++) T.set(x, F + y, z, "sand");
+      }
+    }
+    const surface = (x, z) => F + height(Math.floor(x), Math.floor(z));
+    const { EMERGENCY } = await import("/engine/gait.js");
+    if (params.get("emerg") !== null) EMERGENCY.stretch = Number(params.get("emerg"));   // 9 = off
+    if (params.get("eunc") !== null) EMERGENCY.uncomfortable = params.get("eunc") === "1";
+    if (params.get("eplant") !== null) EMERGENCY.minPlantedFraction = Number(params.get("eplant"));
+    if (params.get("forced") !== null) EMERGENCY.forced = params.get("forced") === "1";
+    if (params.get("reach") !== null) EMERGENCY.reachable = Number(params.get("reach"));
+    const { COMFORT } = await import("/engine/behaviour.js");
+    const { RESCALE } = await import("/engine/body.js");
+    if (params.get("floor") !== null) COMFORT.floor = Number(params.get("floor"));          // speed while a leg is strained
+    if (params.get("slide") !== null) RESCALE.slideFeetAbove = Number(params.get("slide"));  // 0 = slide feet on every size change (Java)
+    report.knobs = { floor: COMFORT.floor, slideFeetAbove: RESCALE.slideFeetAbove };
+    report.emergency = { ...EMERGENCY };
+    const { __spiders } = await import("/main.js");
+    const { distanceToScale } = await import("/mob.js");
+    const { roomAt } = await import("/ground.js");
+    T.player.location = { x: 0.5, y: surface(0.5, 0.5), z: 0.5 };
+    T.setView({ x: 1, y: 0, z: 0 });
+    T.fire("arachno:spawn");
+    const s = __spiders[0];
+    const b = s.body;
+    if (params.get("java") === "1") b.javaWalk = true;
+    let px = 6.5 + GAP, pz = 0.5;
+    T.player.location = { x: px, y: surface(px, pz), z: pz };
+    T.tick(1);
+    const legs = b.legs;
+    const st = legs.map(() => ({ steps: 0, slipMax: 0, slipSum: 0, slipN: 0, prevFoot: null, prevGrounded: false, wasMoving: false }));
+    const acc = { n: 0, speed: 0, size: 0, want: 0, dist: 0, slowed: 0, uncomfortable: 0, capPassage: 0, capHeadroom: 0, capRoom: 0, capWater: 0, stepping: 0 };
+    const track = [];
+    const slipLog = [];
+    legs.forEach((l, i) => {
+      const orig = l.updateMovement.bind(l);
+      l.updateMovement = () => {
+        const before = l.endEffector.copy(), wasG = l.isGrounded(), wasM = l.isMoving;
+        const reach = l.legPlan.segments.reduce((a, sg) => a + sg.length, 0);
+        const stretch = before.distance(l.attachmentPosition) / reach;
+        const why = `trig=${l.isOutsideTriggerZone ? "out" : "in"} planted=${legs.filter((o) => o !== l && o.isGrounded()).length} tgtG=${l.target.isGrounded} touch=${l.touchingGround}`;
+        orig();
+        const moved = l.endEffector.distance(before);
+        if (wasG && !wasM && l.isGrounded() && !l.isMoving && moved > 0.15 && slipLog.length < 25)
+          slipLog.push(`IN-UPDATE leg${i} moved ${moved.toFixed(2)} stretch ${stretch.toFixed(2)}->${(l.endEffector.distance(l.attachmentPosition) / reach).toFixed(2)} dy=${(l.endEffector.y - before.y).toFixed(2)} size=${b.sizeScale.toFixed(2)} sq=${s.ai.isSqueezing()} v=${(b.velocity.horizontalLength() * 20).toFixed(1)} ${why}`);
+      };
+    });
+    let prevSize = b.sizeScale;
+    // ?pattern=walk (default: steady, weaving gently) | stopgo (35 ticks walking - alternately at
+    // ?speed= and 1.3x - then 25 standing) | zigzag (turns 60 degrees every 40 ticks).
+    const PATTERN = params.get("pattern") || "walk";
+    report.pattern = PATTERN;
+    let heading = 0;
+    for (let t = 1; t <= TICKS; t++) {
+      if (PATTERN === "stopgo") {
+        const phase = t % 60, cycle = Math.floor(t / 60);
+        if (phase < 35) px += SPEED * (cycle % 2 ? 1.3 : 1);
+        pz = 0.5 + 8 * Math.sin(t * 0.012);
+      } else if (PATTERN === "zigzag") {
+        if (t % 40 === 0) heading = (Math.floor(t / 40) % 2 ? 1 : -1) * Math.PI / 3;
+        px += SPEED * Math.cos(heading); pz += SPEED * Math.sin(heading);
+      } else {
+        px += SPEED; pz = 0.5 + 8 * Math.sin(t * 0.012);   // walk away along +x, weaving gently in z
+      }
+      T.player.location = { x: px, y: surface(px, pz), z: pz };
+      T.tick(1);
+      const p = b.position;
+      const dist = Math.hypot(px - p.x, pz - p.z);
+      const want = distanceToScale(dist);
+      const pf = s.ai.passageFitScale();
+      const hr = b.confinedHeadroom;
+      const room = roomAt(s.level.blocks, px, surface(px, pz), pz);
+      const unc = legs.filter((l) => l.isUncomfortable && !l.isMoving).length;
+      if (t > SETTLE) {
+        acc.n++;
+        acc.speed += b.velocity.horizontalLength() * 20;
+        acc.size += b.sizeScale; acc.want += want; acc.dist += dist;
+        if ((b.walkFactor ?? 1) < 0.999 || unc > 0) acc.slowed++;
+        acc.uncomfortable += unc;
+        acc.stepping += legs.filter((l) => l.isMoving).length;
+        const g = legs.filter((l) => l.isGrounded()).length;
+        acc.minGrounded = Math.min(acc.minGrounded ?? 99, g);
+        const clearance = p.y - surface(p.x, p.z);
+        acc.minClearance = Math.min(acc.minClearance ?? 99, clearance);
+        if (clearance < b.walkGait.stationary.bodyHeight * 0.5) acc.lowBody = (acc.lowBody || 0) + 1;
+        if (pf !== null && pf < want) acc.capPassage++;
+        if (hr !== null) acc.capHeadroom++;
+        if (room !== null) acc.capRoom++;
+        legs.forEach((l, i) => {
+          const S = st[i], foot = l.endEffector, g = l.isGrounded();
+          if (g && S.prevGrounded && !l.isMoving && !S.wasMoving) {
+            const slip = foot.distance(S.prevFoot);
+            S.slipMax = Math.max(S.slipMax, slip); S.slipSum += slip; S.slipN++;
+            if (slip > 0.15 && slipLog.length < 25) slipLog.push(`t=${t} leg${i} slip ${slip.toFixed(2)} size ${prevSize.toFixed(2)}->${b.sizeScale.toFixed(2)} sq=${s.ai.isSqueezing()} unc=${l.isUncomfortable}`);
+            acc.window = Math.max(acc.window || 0, slip);
+          }
+          if (l.isMoving && !S.wasMoving) S.steps++;
+        });
+      }
+      legs.forEach((l, i) => { st[i].prevFoot = l.endEffector.copy(); st[i].prevGrounded = l.isGrounded(); st[i].wasMoving = l.isMoving; });
+      prevSize = b.sizeScale;
+      if (t > SETTLE && t % 10 === 0) {   // what the in-game status line would show every half second
+        acc.huds = (acc.huds || 0) + 1;
+        if ((acc.window || 0) > 0.15) acc.redHuds = (acc.redHuds || 0) + 1;
+        acc.window = 0;
+      }
+      if (t % 20 === 0) track.push(`${t}: d=${dist.toFixed(1)} want=${want.toFixed(2)} size=${b.sizeScale.toFixed(2)} v=${(b.velocity.horizontalLength() * 20).toFixed(1)} max=${(b.gait.maxSpeed * 20).toFixed(1)} unc=${unc} wf=${(b.walkFactor ?? 1).toFixed(2)} pf=${pf} hr=${hr === null ? "-" : hr.toFixed(1)} room=${room === null ? "-" : room} mode=${s.ai.mode} y=${(p.y - surface(p.x, p.z)).toFixed(2)}`);
+    }
+    const n = acc.n, secs = n / 20;
+    report.mean = {
+      distance: +(acc.dist / n).toFixed(1), sizeWanted: +(acc.want / n).toFixed(2), sizeGot: +(acc.size / n).toFixed(2),
+      speed: +(acc.speed / n).toFixed(2), uncomfortableLegs: +(acc.uncomfortable / n).toFixed(2), legsStepping: +(acc.stepping / n).toFixed(2),
+    };
+    report.support = { minGroundedLegs: acc.minGrounded, lowBodyTicks: acc.lowBody || 0, minBodyClearance: +acc.minClearance.toFixed(2) };
+    report.fractionOfTicks = {
+      slowedByComfortGate: +(acc.slowed / n).toFixed(2), passageCap: +(acc.capPassage / n).toFixed(2),
+      headroomCap: +(acc.capHeadroom / n).toFixed(2), playerRoomCap: +(acc.capRoom / n).toFixed(2),
+    };
+    const slips = st.map((S) => S.slipMax);
+    report.feet = {
+      stepsPerSecondPerLeg: +(st.reduce((a, S) => a + S.steps, 0) / legs.length / secs).toFixed(2),
+      slipMaxWorstLeg: +Math.max(...slips).toFixed(3),
+      redDragHuds: `${acc.redHuds || 0}/${acc.huds || 0}`,
+      slipMean: +(st.reduce((a, S) => a + S.slipSum, 0) / Math.max(1, st.reduce((a, S) => a + S.slipN, 0))).toFixed(4),
+    };
+    report.slipLog = slipLog;
+    report.track = track;
+    report.errors = T.errors;
+  } catch (e) {
+    report.crash = String(e) + "\n" + (e.stack || "");
+  }
+  out.textContent = JSON.stringify(report, null, 1);
+</script>

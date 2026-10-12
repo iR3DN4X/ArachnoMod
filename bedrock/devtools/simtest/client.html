@@ -1,0 +1,212 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Client replay</title>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<pre id="out">running...</pre>
+<script type="module">
+  // Runs the real main.js, then replays the REAL client files from resource_pack/ (the
+  // pre_animation smoothing + every bone expression) at 60 fps. ?ox=N runs the test N blocks from
+  // the world origin; ?nosmooth=1 skips pre_animation (what the client draws if that script fails).
+  const out = document.getElementById("out");
+  const report = {};
+  try {
+    const params = new URLSearchParams(location.search);
+    const NOSMOOTH = params.get("nosmooth") === "1";
+    const { compile, channel } = await import("/test/molang.js");
+    const { __test, FLOOR, ORIGIN_OFFSET: OX } = await import("@minecraft/server");
+    const { Vec3, Quat } = await import("/engine/vec.js");
+    const entityJson = await (await fetch("/rp/entity/leg.entity.json")).json();
+    const animJson = await (await fetch("/rp/animations/leg.animation.json")).json();
+    const geoJson = await (await fetch("/rp/models/entity/leg.geo.json")).json();
+    const scripts = entityJson["minecraft:client_entity"].description.scripts;
+    const init = (scripts.initialize || []).map(compile);   // runs once, when the client creates the entity
+    const pre = scripts.pre_animation.map(compile);
+    const bones = animJson.animations["animation.arachno_leg.pose"].bones;
+    report.molangStatements = { initialize: init.length, pre_animation: pre.length };
+    report.visibleBounds = geoJson["minecraft:geometry"][0].description.visible_bounds_width;
+
+    await import("/main.js");
+    const legs = () => __test.MockEntity.all.filter((e) => e.isValid && e.typeId === "arachno:leg");
+
+    // ---- client emulation, conventions derived from vanilla's files: bone Y +v = Ry(+v),
+    // bone X +v = Rx(-v), bone Z +v = Rz(-v); engine draw = Ry(180 - bodyYaw) o MirrorX; 16 units/block.
+    const rad = (d) => d * Math.PI / 180;
+    const Ry = (deg, v) => v.copy().rotate(Quat.rotY(rad(deg)));
+    const Rx = (deg, v) => v.copy().rotate(Quat.rotX(rad(deg)));
+    const Rz = (deg, v) => v.copy().rotate(Quat.rotZ(rad(deg)));
+    const Mx = (v) => new Vec3(-v.x, v.y, v.z);
+    function drawLeg(c) {
+      const rootY = channel(bones.root.rotation, c)[1];
+      const segs = [];
+      for (let s = 0; s < 3; s++) {
+        const P = channel(bones[`off${s}`].position, c);
+        const yawV = channel(bones[`yaw${s}`].rotation, c)[1];
+        const pitchV = channel(bones[`pitch${s}`].rotation, c)[0];
+        const rollV = channel(bones[`roll${s}`].rotation, c)[2];
+        const sc = channel(bones[`seg${s}`].scale, c);
+        const world = (local) => {
+          let v = Ry(yawV, Rx(-pitchV, Rz(-rollV, local)));
+          v = v.add(new Vec3(P[0], P[1], P[2]));
+          v = Ry(rootY, v);
+          v = Ry(180 - c.bodyYaw, Mx(v));
+          return new Vec3(c.position.x + v.x / 16, c.position.y + v.y / 16, c.position.z + v.z / 16);
+        };
+        segs.push({ start: world(new Vec3(0, 0, 0)), end: world(new Vec3(0, 0, 16 * sc[2])), thick: sc[0] });
+      }
+      return segs;
+    }
+    // ---- What the CLIENT knows. Bedrock sends an entity's properties and its position in separate
+    // packets, and a new entity first appears with DEFAULT properties (its data follows). A frame
+    // can fall between those packets - that is what made the whole spider blink in game when legs
+    // were teleported. ?net= picks the order: "props" (properties a frame before the position,
+    // default), "pos" (position first), "atomic" (all at once - the old, too-kind model).
+    const NET = params.get("net") || "props";
+    const cli = new Map();      // id -> { props, location, rotation }
+    // ?burst=1: every other tick's packets are held back and arrive together with the next tick's
+    // (10 Hz bursts of two ticks) - uneven delivery, as the in-game video suggests.
+    const BURST = params.get("burst") === "1";
+    let pending = [];           // [{ frame, fn }] - packets in flight; frame = absolute client frame number
+    let gframe = 0, serverTicks = 0;
+    function serverTickDone() {
+      const base = gframe + (BURST && (++serverTicks % 2 === 1) ? FRAMES_PER_TICK : 0);
+      const srv = new Map(legs().map((e) => [e.id, e]));
+      for (const id of [...cli.keys()]) if (!srv.has(id)) pending.push({ frame: base, fn: () => cli.delete(id) });
+      for (const [id, e] of srv) {
+        const props = { ...e.props }, location = { ...e.location }, rotation = { ...e.rotation };
+        if (!cli.has(id)) {
+          pending.push({ frame: base, fn: () => cli.set(id, { props: {}, location, rotation }) });
+          pending.push({ frame: base + (NET === "atomic" ? 0 : 1), fn: () => { const c = cli.get(id); if (c) c.props = props; } });
+        } else {
+          pending.push({ frame: base + (NET === "pos" ? 1 : 0), fn: () => { const c = cli.get(id); if (c) c.props = props; } });
+          pending.push({ frame: base + (NET === "props" ? 1 : 0), fn: () => { const c = cli.get(id); if (c) { c.location = location; c.rotation = rotation; } } });
+        }
+      }
+    }
+    function deliver() {
+      for (const p of pending) if (p.frame <= gframe) p.fn();
+      pending = pending.filter((p) => p.frame > gframe);
+    }
+
+    const ctxs = new Map();
+    function frame(dt) {
+      const drawn = new Map();
+      for (const [id, s] of cli) {
+        let c = ctxs.get(id);
+        if (!c) { c = { v: {} }; ctxs.set(id, c); if (!NOSMOOTH) for (const st of init) st(c); }
+        c.props = s.props; c.position = s.location; c.deltaTime = dt; c.bodyYaw = s.rotation.y;
+        if (!NOSMOOTH) for (const st of pre) st(c);
+        drawn.set(id, drawLeg(c));
+      }
+      return drawn;
+    }
+    // The truth: what the server's numbers say right now (every offset 0), per live entity id.
+    const rawLegs = () => new Map(legs().map((e) => [e.id, drawLeg({ v: {}, props: e.props, position: e.location, bodyYaw: e.rotation.y })]));
+    const legLength = (segs) => segs.reduce((b, sg) => b + sg.start.distance(sg.end), 0);
+    const visible = (segs) => segs.some((sg) => sg.thick > 0) && legLength(segs) > 0.01;
+    const COVER = 5;            // a true leg counts as drawn if a visible drawn hip is this close (1 tick of glide lag at full speed is ~3.2)
+
+    // Spawn 6 blocks east, stand still, then let the player run 54 blocks away.
+    __test.fire("arachno:spawn");
+    let worstGapSettled = 0, worstGapMoving = 0, frames = 0;
+    const FRAMES_PER_TICK = 3, DT = 1 / 60;
+    let prevHip = new Map(), maxDrawnHipStep = 0, maxServerHipStep = 0, prevServerHip = null, firstLegIds = null;
+    let worstLagBlocks = 0, peakScale = 0, peakSpeed = 0, arrivedTick = null, nanSeen = false;
+    let prevRawHip = new Map(), lastRawHip = new Map();
+    let frozenFrames = 0, movingFrames = 0, lagSum = 0, lagN = 0, serverStepSum = 0, serverStepN = 0;
+    const apiCalls = {};
+    let framesMissingLegs12 = 0, framesMissingLegs = 0, worstStray = 0, worstStrayAt = null, entitiesSpawned = new Set();
+    for (let tick = 1; tick <= 400; tick++) {
+      if (tick === 80) __test.player.location = { x: OX + 60.5, y: FLOOR, z: OX + 0.5 };
+      const c0 = { ...__test.counts };
+      __test.tick(1);
+      const dc = { rays: __test.counts.rays - c0.rays, blocks: __test.counts.blocks - c0.blocks, writes: __test.counts.writes - c0.writes };
+      const phase = tick < 80 ? "standing" : tick < 130 ? "charging" : "arrived";
+      apiCalls[phase] = apiCalls[phase] || { ticks: 0, rays: 0, blocks: 0, writes: 0, maxRays: 0, maxWrites: 0 };
+      const ac = apiCalls[phase]; ac.ticks++; ac.rays += dc.rays; ac.blocks += dc.blocks; ac.writes += dc.writes; ac.maxRays = Math.max(ac.maxRays, dc.rays); ac.maxWrites = Math.max(ac.maxWrites, dc.writes);
+      for (const e of legs()) entitiesSpawned.add(e.id);
+      serverTickDone();
+      const raw = rawLegs();
+      prevRawHip = lastRawHip; lastRawHip = new Map([...raw].map(([id, segs]) => [id, segs[0].start]));
+      const trueHips = [...raw.values()].map((segs) => segs[0].start);
+      const trueFeet = [...raw.values()].map((segs) => segs[2].end);
+      const nearest = (p, list) => list.reduce((m, q) => Math.min(m, p.distance(q)), Infinity);
+      for (let f = 0; f < FRAMES_PER_TICK; f++) {
+        deliver();
+        const drawn = frame(DT);
+        gframe++;
+        frames++;
+        const visibleHips = [];
+        for (const [id, segs] of drawn) {
+          for (const sg of segs) if (![sg.start.x, sg.start.y, sg.start.z, sg.end.x, sg.end.y, sg.end.z].every(Number.isFinite)) nanSeen = true;
+          if (!visible(segs)) continue;
+          visibleHips.push(segs[0].start);
+          const gap = Math.max(segs[0].end.distance(segs[1].start), segs[1].end.distance(segs[2].start));
+          if (tick < 80) worstGapSettled = Math.max(worstGapSettled, gap); else worstGapMoving = Math.max(worstGapMoving, gap);
+          if (tick > 5) {
+            const stray = nearest(segs[0].start, trueHips);
+            if (stray > worstStray) { worstStray = stray; worstStrayAt = { tick, frame: f }; }
+            if (f === FRAMES_PER_TICK - 1) { const lag = nearest(segs[2].end, trueFeet); if (lag > worstLagBlocks) { worstLagBlocks = lag; report.worstLagAt = { tick, entity: id, newEntity: !firstLegIds || !firstLegIds.includes(id), liveNow: legs().some((e) => e.id === id) }; } }
+          }
+          if (tick > 80 && raw.has(id)) { lagSum += segs[0].start.distance(raw.get(id)[0].start); lagN++; }
+          const prev = prevHip.get(id);
+          if (prev && tick > 5) maxDrawnHipStep = Math.max(maxDrawnHipStep, segs[0].start.distance(prev));
+          const srvMoved = raw.has(id) && prevRawHip.has(id) && raw.get(id)[0].start.distance(prevRawHip.get(id)) > 0.01;
+          if (prev && tick > 80 && srvMoved) { movingFrames++; if (segs[0].start.distance(prev) < 1e-6) frozenFrames++; }
+          prevHip.set(id, segs[0].start);
+        }
+        // every true leg must have a visible drawn leg on it, every frame (no blink)
+        if (tick > 5 && trueHips.some((h) => nearest(h, visibleHips) > COVER)) framesMissingLegs++;
+        if (tick > 5 && trueHips.some((h) => nearest(h, visibleHips) > 12)) framesMissingLegs12++;
+      }
+      const spider = (await import("/main.js")).__spiders[0];
+      if (spider) {
+        const size = spider.body.sizeScale, speed = spider.body.velocity.horizontalLength() * 20;
+        peakScale = Math.max(peakScale, size); if (tick > 80) peakSpeed = Math.max(peakSpeed, speed);
+      }
+      if (!firstLegIds) firstLegIds = [...raw.keys()];
+      const h0 = [...raw.values()][0];
+      if (h0) {
+        const sh = h0[0].start;
+        if (prevServerHip && tick > 5) maxServerHipStep = Math.max(maxServerHipStep, sh.distance(prevServerHip));
+        if (prevServerHip && tick > 80) { serverStepSum += sh.distance(prevServerHip); serverStepN++; }
+        prevServerHip = sh;
+        if (tick > 80 && arrivedTick === null && OX + 60.5 - sh.x < 6) arrivedTick = tick - 80;
+      }
+    }
+    // let it settle, then: drawn legs vs the server's numbers
+    for (let k = 0; k < 4; k++) { __test.tick(1); serverTickDone(); for (let f = 0; f < FRAMES_PER_TICK; f++) { deliver(); frame(DT); gframe++; } }
+    const drawnMap = frame(DT), rawMap = rawLegs();
+    let worstSettled = 0;
+    for (const [id, segs] of rawMap) {
+      const d = drawnMap.get(id);
+      if (!d) { worstSettled = Infinity; continue; }
+      segs.forEach((sg, s) => { worstSettled = Math.max(worstSettled, sg.start.distance(d[s].start), sg.end.distance(d[s].end)); });
+    }
+    const drawn = [...drawnMap.values()], raw = [...rawMap.values()];
+    const feetAboveFloor = raw.map((segs) => +(segs[2].end.y - FLOOR).toFixed(3));
+    report.smoothing = NOSMOOTH ? "OFF (pre_animation skipped)" : "on";
+    report.connectivity = { framesReplayed: frames, worstGapStanding: +worstGapSettled.toExponential(2), worstGapWhileRunning: +worstGapMoving.toFixed(3) };
+    report.settledDrawnVsServer = +worstSettled.toExponential(2);
+    report.serverFeetAboveFloor = { min: Math.min(...feetAboveFloor), max: Math.max(...feetAboveFloor) };
+    report.worstFootLagEndOfTick = +worstLagBlocks.toFixed(3);
+    report.apiCallsPerTick = Object.fromEntries(Object.entries(apiCalls).map(([k, a]) => [k, { rays: +(a.rays / a.ticks).toFixed(1), blockReads: +(a.blocks / a.ticks).toFixed(1), propertyWrites: +(a.writes / a.ticks).toFixed(1), maxRays: a.maxRays, maxWrites: a.maxWrites }]));
+    report.network = NET + (BURST ? " +burst" : "");
+    report.visualLag = { meanHipLagBlocks: +(lagSum / Math.max(1, lagN)).toFixed(3), meanHipStepPerTick: +(serverStepSum / Math.max(1, serverStepN)).toFixed(3), lagInTicks: +((lagSum / Math.max(1, lagN)) / Math.max(1e-9, serverStepSum / Math.max(1, serverStepN))).toFixed(2) , frozenLegFramesWhileRunning: frozenFrames + "/" + movingFrames };
+    report.reparks = (entitiesSpawned.size - (firstLegIds ? firstLegIds.length : 0)) / Math.max(1, firstLegIds ? firstLegIds.length : 1);
+    report.blink = { framesWithALegMissing: framesMissingLegs, framesWithALegMissingBy12: framesMissingLegs12, worstStrayHipBlocks: +worstStray.toFixed(3), at: worstStrayAt };
+    report.motion = { maxDrawnHipStepPerFrame: +maxDrawnHipStep.toFixed(3), maxServerHipStepPerTick: +maxServerHipStep.toFixed(3) };
+    report.charge = { peakSize: peakScale, peakSpeedBlocksPerSecond: peakSpeed, ticksToCover54Blocks: arrivedTick };
+    report.nanSeen = nanSeen;
+    const len = (legsList) => legsList.reduce((a, segs) => a + segs.reduce((b, sg) => b + sg.start.distance(sg.end), 0), 0);
+    report.drawnLegLength = { drawn: +len(drawn).toFixed(2), server: +len(raw).toFixed(2) };
+    const errs = new Map();
+    for (const c of ctxs.values()) for (const [k, n] of (c.errors || [])) errs.set(k, (errs.get(k) || 0) + n);
+    report.molangErrors = { distinct: errs.size, total: [...errs.values()].reduce((a, b) => a + b, 0), sample: [...errs.keys()].slice(0, 4) };
+    report.messages = __test.log.filter((l) => l.startsWith("msg") && !l.includes("#0") && !l.includes("ray:")).slice(0, 6);
+    report.originOffset = OX;
+    report.errors = __test.errors;
+  } catch (e) {
+    report.crash = String(e) + "\n" + (e.stack || "");
+  }
+  out.textContent = JSON.stringify(report, null, 1);
+</script>

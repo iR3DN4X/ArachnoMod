@@ -1,0 +1,126 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AI scenarios</title>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<pre id="out">running...</pre>
+<script type="module">
+  // Runs the pack's real main.js (engine + SpiderAI + sizing) in one obstacle SCENE and reports
+  // whether the chase gets to the player the way the Java AI does. ?scene=open|wall|tree|pit|room|
+  // pillar|tunnel. The spider spawns at (6, 0); the player stands at the scene's target.
+  const out = document.getElementById("out");
+  const params = new URLSearchParams(location.search);
+  const SCENE = params.get("scene") || "open";
+  const TICKS = Number(params.get("ticks")) || 600;
+  const report = { scene: SCENE };
+  try {
+    const { __test, FLOOR } = await import("@minecraft/server");
+    const T = __test;
+    const F = FLOOR;   // floor top: blocks at y = F are at feet level
+    // ---- scenes ----
+    let target = { x: 40.5, y: F, z: 0.5 };
+    const checks = {};
+    // Obstacles are taller than the biggest step-up (maxClimb caps at 8), so even a giant
+    // must route round or through them rather than stride over.
+    if (SCENE === "wall") {
+      T.fill(12, F, -15, 12, F + 11, 15, "stone");       // 12-high wall across the line
+      T.fill(12, F, 4, 12, F + 1, 4, "air");             // a doorway, 4 blocks off the line
+      target = { x: 18.5, y: F, z: 0.5 };
+      checks.crossX = 12;
+    } else if (SCENE === "tree") {
+      T.fill(10, F + 6, -2, 14, F + 10, 2, "oak_leaves"); // canopy
+      T.fill(12, F, 0, 12, F + 10, 0, "oak_log");         // 11-high trunk, right on the line
+      target = { x: 18.5, y: F, z: 0.5 };
+    } else if (SCENE === "pit") {
+      T.fill(20, F - 3, 0, 20, F - 1, 0, "air");          // 1x1 hole, 3 deep
+      target = { x: 20.5, y: F - 3, z: 0.5 };
+    } else if (SCENE === "room") {
+      T.fill(18, F, -4, 26, F + 3, 4, "stone");           // shell (walls + ceiling at F+3)
+      T.fill(19, F, -3, 25, F + 2, 3, "air");             // 3-high interior
+      T.fill(18, F, 0, 18, F + 1, 0, "air");              // doorway in the west wall
+      target = { x: 23.5, y: F, z: 0.5 };
+      checks.roofY = F + 3;
+    } else if (SCENE === "pillar") {
+      T.fill(20, F, 0, 20, F + 3, 0, "stone");            // 4-high 1x1 pillar
+      target = { x: 20.5, y: F + 4, z: 0.5 };
+    } else if (SCENE === "tunnel2") {
+      T.fill(16, F, -8, 22, F + 10, 8, "stone");          // the hill further away
+      T.fill(16, F, 0, 22, F + 1, 0, "air");
+      target = { x: 27.5, y: F, z: 0.5 };
+      checks.crossX = 19;
+    } else if (SCENE === "tunnel3") {
+      T.fill(10, F, -8, 16, F + 10, 8, "stone");          // tunnel at z=3, player on z=0: hunt for it
+      T.fill(10, F, 3, 16, F + 1, 3, "air");
+      target = { x: 20.5, y: F, z: 0.5 };
+      checks.crossX = 13;
+    } else if (SCENE === "tunnel") {
+      T.fill(10, F, -8, 16, F + 10, 8, "stone");          // a hill, 11 high
+      T.fill(10, F, 0, 16, F + 1, 0, "air");              // a 2-high tunnel straight through it
+      target = { x: 20.5, y: F, z: 0.5 };
+      checks.crossX = 13;
+    }
+
+    if (new URLSearchParams(location.search).get("ramp") !== null) { const { setComfortRecovery } = await import("/engine/behaviour.js"); setComfortRecovery(Number(new URLSearchParams(location.search).get("ramp"))); }
+    {   // the round-14 emergency-step knobs (?emerg= 9 = off, ?eunc=0|1, ?eplant=, ?forced=0|1)
+      const { EMERGENCY } = await import("/engine/gait.js");
+      if (params.get("emerg") !== null) EMERGENCY.stretch = Number(params.get("emerg"));
+      if (params.get("eunc") !== null) EMERGENCY.uncomfortable = params.get("eunc") === "1";
+      if (params.get("eplant") !== null) EMERGENCY.minPlantedFraction = Number(params.get("eplant"));
+      if (params.get("forced") !== null) EMERGENCY.forced = params.get("forced") === "1";
+      if (params.get("careful") === "0") EMERGENCY.ignoreCareful = true;
+    }
+    await import("/main.js");
+    const { __spiders } = await import("/main.js");
+    T.player.location = { x: 0.5, y: F, z: 0.5 };
+    T.setView({ x: 1, y: 0, z: 0 });
+    T.fire("arachno:spawn");                               // spawns 6 blocks east, at (6.5, 0.5)
+    T.player.location = { ...target };
+
+    const s = __spiders[0];
+    if (params.get("java") === "1") s.body.javaWalk = true;
+    if (params.get("javaSupport") === "1") s.body.javaSupport = true;
+    const track = [];
+    let reachedTick = null, insideSolidTicks = 0, minSize = Infinity, maxSize = 0, minY = Infinity, maxY = -Infinity;
+    let crossing = null, onRoofTicks = 0, maxSqueezeDepth = 0, passageTicks = 0, pinTicks = 0;
+    let stuckWorst = 0, lastProgress = { tick: 0, dist: Infinity };
+    const modes = {};
+    let prevX = s.body.position.x;
+    let maxReads = 0, sumReads = 0, maxRays = 0, sumRays = 0;
+    for (let t = 1; t <= TICKS; t++) {
+      const c0 = { ...T.counts };
+      T.tick(1);
+      const dr = T.counts.blocks - c0.blocks, dy = T.counts.rays - c0.rays;
+      maxReads = Math.max(maxReads, dr); sumReads += dr; maxRays = Math.max(maxRays, dy); sumRays += dy;
+      const b = s.body, p = b.position;
+      const dx = target.x - p.x, dz = target.z - p.z;
+      const dist = Math.hypot(dx, dz);
+      const arrive = Math.min(b.walkGait.stationary.bodyHeight * 2, 4);
+      modes[s.ai.mode] = (modes[s.ai.mode] || 0) + 1;
+      if (reachedTick === null && dist < arrive + 1.0 && Math.abs(p.y - b.walkGait.stationary.bodyHeight - target.y) < 2.5) reachedTick = t;
+      if (T.isSolid(p.x, p.y, p.z)) insideSolidTicks++;
+      minSize = Math.min(minSize, b.sizeScale); maxSize = Math.max(maxSize, b.sizeScale);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      if (checks.crossX !== undefined && crossing === null && prevX < checks.crossX && p.x >= checks.crossX) crossing = { tick: t, z: +p.z.toFixed(2), y: +(p.y - F).toFixed(2) };
+      prevX = p.x;
+      if (checks.roofY !== undefined && p.y - b.walkGait.stationary.bodyHeight >= checks.roofY - 0.2 && p.x > 17 && p.x < 27 && Math.abs(p.z) < 5) onRoofTicks++;
+      if (SCENE === "pit") maxSqueezeDepth = Math.max(maxSqueezeDepth, F - (p.y - b.walkGait.stationary.bodyHeight));
+      if (s.ai.passageClearance > 0) passageTicks++;
+      if (b.activePinY !== null || b.activeLaneX !== null || b.activeLaneZ !== null) pinTicks++;
+      // stuck = chasing, far from the player, and no progress for 60 ticks
+      if (dist < lastProgress.dist - 1.0) lastProgress = { tick: t, dist };
+      if (s.ai.mode === "CHASE" && reachedTick === null && dist > 6) stuckWorst = Math.max(stuckWorst, t - lastProgress.tick);
+      const tr = (params.get("trace") || "").split("-").map(Number);
+      if (tr.length === 2 && t >= tr[0] && t <= tr[1]) (report.trace = report.trace || []).push(`${t} (${p.x.toFixed(2)},${(p.y - F).toFixed(2)},${p.z.toFixed(2)}) s=${b.sizeScale.toFixed(2)} pc=${s.ai.passageClearance} oh=${s.ai.openingHeight} ot=${s.ai.openingTimer} pin=${b.activePinY === null ? "-" : (b.activePinY - F).toFixed(1)} lane=${b.activeLaneX ?? "-"}/${b.activeLaneZ ?? "-"} beh=${s.ai.behaviour.target ? "(" + s.ai.behaviour.target.x.toFixed(1) + "," + s.ai.behaviour.target.z.toFixed(1) + ")" : "-"}`);
+      if (t % 20 === 0 && (reachedTick === null || t < reachedTick + 40)) track.push(`${t}:${s.ai.mode[0]} (${p.x.toFixed(1)},${(p.y - F).toFixed(1)},${p.z.toFixed(1)}) s=${b.sizeScale.toFixed(2)} d=${dist.toFixed(1)}${s.ai.passageClearance ? " pass" + s.ai.passageClearance : ""}${b.squeezeTargetY !== null ? " sq" : ""}`);
+    }
+    Object.assign(report, {
+      apiPerTick: { blockReadsAvg: +(sumReads / TICKS).toFixed(1), blockReadsMax: maxReads, raysAvg: +(sumRays / TICKS).toFixed(1), raysMax: maxRays },
+      reachedTick, stuckLongestTicks: stuckWorst, bodyInsideSolidTicks: insideSolidTicks,
+      size: { min: +minSize.toFixed(2), max: +maxSize.toFixed(2) }, bodyY: { min: +(minY - F).toFixed(2), max: +(maxY - F).toFixed(2) },
+      crossing, onRoofTicks, maxSqueezeDepth: +maxSqueezeDepth.toFixed(2), passageTicks, pinTicks, modes,
+      track, errors: T.errors,
+    });
+  } catch (e) {
+    report.crash = String(e) + "\n" + (e.stack || "");
+  }
+  out.textContent = JSON.stringify(report, null, 1);
+</script>

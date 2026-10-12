@@ -18,6 +18,10 @@ once you finally kill it. **Seven advancements** track the hunt. Every number is
 `config/arachnomod-common.toml` or live in-game via `/spider config`, including the netherite
 spider's armour and its leg count (1–16, default 8).
 
+**Bedrock Edition:** the spider is also a Bedrock add-on (Minecraft Bedrock 26.40+, no experiments),
+in [`bedrock/`](bedrock/). Bedrock v1.2.7 matches the Java mod's v1.2.7: the netherite and camo
+variants, taming and riding, and `/spider` + `/spiderconfig`.
+
 > ⚠️ **Arachnophobia warning** — the movement is realistic on purpose. See the CurseForge page.
 
 **Download:** the only official distribution is the **CurseForge page** — jars found anywhere
@@ -26,7 +30,7 @@ else may be modified or malicious.
 ## Repository layout
 
 This is a monorepo: one folder per loader, each a self-contained Gradle project sharing the same
-Kotlin engine sources.
+Kotlin engine sources, plus the Bedrock add-on.
 
 | Folder | Loader | Minecraft | Java | Toolchain |
 |---|---|---|---|---|
@@ -36,6 +40,7 @@ Kotlin engine sources.
 | [`neoforge-1.21.1/`](neoforge-1.21.1/) | NeoForge | 1.21.1 | 21 | ModDevGradle |
 | [`forge-1.20.1/`](forge-1.20.1/) | Forge (loads on NeoForge 1.20.1 too) | 1.20.1 | 17 | ForgeGradle 6, official mappings |
 | [`fabric-1.20.1/`](fabric-1.20.1/) | Fabric | 1.20.1 | 17 | Fabric Loom, Mojang mappings |
+| [`bedrock/`](bedrock/) | Bedrock add-on (behavior + resource pack) | Bedrock 26.40+ | — | Script API `@minecraft/server` 2.9.0 (JavaScript); nothing to compile |
 
 **On the 26.x builds:** Minecraft 26.1 is the first *unobfuscated* release, so those two projects carry no mappings declaration at all, use the `net.fabricmc.fabric-loom` / ModDevGradle plugins without remapping, and require **Java 25 — including for the Gradle JVM itself**. There is no Forge build for 26.x: MinecraftForge 26.1.2 exists, but Kotlin for Forge, which this mod needs, does not support it; Quilt needs no separate build because Quilt Loader runs the Fabric jar (Quilt's own standard libraries were discontinued in December 2025).
 
@@ -64,6 +69,9 @@ Jars land in each project's `build/libs/`. `runClient` in any project starts a d
 **Runtime dependencies:** Fabric build needs Fabric API + Fabric Language Kotlin; the
 NeoForge/Forge builds need Kotlin for Forge.
 
+**Bedrock:** nothing to compile. `bash bedrock/devtools/package.sh <output dir>` zips both packs into
+the release `.mcaddon`; [`bedrock/README.md`](bedrock/README.md) has the details.
+
 ## License — source-available, NOT open-source
 
 This code is published for transparency, learning, and add-on development. It remains under a
@@ -80,6 +88,6 @@ modpacks (with acknowledgment), and monetized videos are all welcome. Read
 - **[NetherySiloX](https://www.curseforge.com/members/netherysilox/projects)** — community
   contributor: safe-spawning design, the wander/alert/chase AI, and the in-game command/config
   system that became `/spider config`.
-- **iR3DN4X** — mod author: the ports (NeoForge/Forge/Fabric), taming & riding, the size-shifting
+- **iR3DN4X** — mod author: the ports (NeoForge/Forge/Fabric, and the Bedrock add-on), taming & riding, the size-shifting
   hunt behaviour, the camo variant's active camouflage, smooth-animation work, and everything
   else.

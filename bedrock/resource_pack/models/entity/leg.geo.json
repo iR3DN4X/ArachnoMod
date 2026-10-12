@@ -1,0 +1,54 @@
+{
+  "format_version": "1.12.0",
+  "minecraft:geometry": [
+    {
+      "description": {
+        "identifier": "geometry.arachno_leg",
+        "texture_width": 16,
+        "texture_height": 16,
+        "visible_bounds_width": 192,
+        "visible_bounds_height": 192,
+        "visible_bounds_offset": [0, 0, 0]
+      },
+      "bones": [
+        { "name": "root", "pivot": [0, 0, 0] },
+
+        { "name": "off0", "parent": "root", "pivot": [0, 0, 0] },
+        { "name": "yaw0", "parent": "off0", "pivot": [0, 0, 0] },
+        { "name": "pitch0", "parent": "yaw0", "pivot": [0, 0, 0] },
+        { "name": "roll0", "parent": "pitch0", "pivot": [0, 0, 0] },
+        {
+          "name": "seg0", "parent": "roll0", "pivot": [0, 0, 0],
+          "cubes": [ { "origin": [-8, -8, 0], "size": [16, 16, 16], "uv": {
+            "north": { "uv": [0, 0], "uv_size": [16, 16] }, "south": { "uv": [0, 0], "uv_size": [16, 16] },
+            "east": { "uv": [0, 0], "uv_size": [16, 16] }, "west": { "uv": [0, 0], "uv_size": [16, 16] },
+            "up": { "uv": [0, 0], "uv_size": [16, 16] }, "down": { "uv": [0, 0], "uv_size": [16, 16] } } } ]
+        },
+
+        { "name": "off1", "parent": "root", "pivot": [0, 0, 0] },
+        { "name": "yaw1", "parent": "off1", "pivot": [0, 0, 0] },
+        { "name": "pitch1", "parent": "yaw1", "pivot": [0, 0, 0] },
+        { "name": "roll1", "parent": "pitch1", "pivot": [0, 0, 0] },
+        {
+          "name": "seg1", "parent": "roll1", "pivot": [0, 0, 0],
+          "cubes": [ { "origin": [-8, -8, 0], "size": [16, 16, 16], "uv": {
+            "north": { "uv": [0, 0], "uv_size": [16, 16] }, "south": { "uv": [0, 0], "uv_size": [16, 16] },
+            "east": { "uv": [0, 0], "uv_size": [16, 16] }, "west": { "uv": [0, 0], "uv_size": [16, 16] },
+            "up": { "uv": [0, 0], "uv_size": [16, 16] }, "down": { "uv": [0, 0], "uv_size": [16, 16] } } } ]
+        },
+
+        { "name": "off2", "parent": "root", "pivot": [0, 0, 0] },
+        { "name": "yaw2", "parent": "off2", "pivot": [0, 0, 0] },
+        { "name": "pitch2", "parent": "yaw2", "pivot": [0, 0, 0] },
+        { "name": "roll2", "parent": "pitch2", "pivot": [0, 0, 0] },
+        {
+          "name": "seg2", "parent": "roll2", "pivot": [0, 0, 0],
+          "cubes": [ { "origin": [-8, -8, 0], "size": [16, 16, 16], "uv": {
+            "north": { "uv": [0, 0], "uv_size": [16, 16] }, "south": { "uv": [0, 0], "uv_size": [16, 16] },
+            "east": { "uv": [0, 0], "uv_size": [16, 16] }, "west": { "uv": [0, 0], "uv_size": [16, 16] },
+            "up": { "uv": [0, 0], "uv_size": [16, 16] }, "down": { "uv": [0, 0], "uv_size": [16, 16] } } } ]
+        }
+      ]
+    }
+  ]
+}

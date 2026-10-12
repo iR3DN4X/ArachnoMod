@@ -32,7 +32,7 @@ It's a hunter.
 
 ***
 
-ArachnoMod runs on **Fabric, Forge and NeoForge — across 26.1.2, 1.21.1 and 1.20.1**:
+ArachnoMod runs on **Fabric, Forge and NeoForge — across 26.1.2, 1.21.1 and 1.20.1** — and on **Bedrock Edition** as an add-on:
 
 | Loader   |Minecraft |Requires                                         |
 | -------- |--------- |------------------------------------------------ |
@@ -42,6 +42,7 @@ ArachnoMod runs on **Fabric, Forge and NeoForge — across 26.1.2, 1.21.1 and 1.
 | <strong>NeoForge</strong> |1.21.1    |Kotlin for Forge                                 |
 | <strong>Forge</strong> |1.20.1    |Kotlin for Forge <em>(also loads on NeoForge 1.20.1)</em> |
 | <strong>Fabric</strong> |<strong>1.20.1</strong> |Fabric API <strong>+</strong> Fabric Language Kotlin |
+| <strong>Bedrock</strong> |<strong>26.40+</strong> |Nothing — it's an add-on with its own page: <strong>[Netherite Octoarachnopod for Bedrock](https://www.curseforge.com/minecraft-bedrock/addons/netherite-octoarachnopod)</strong> <em>(currently matches Java v1.2.7)</em> |
 
 ***
 
@@ -238,6 +239,10 @@ Fabric:
 *   **Minecraft 1.21.1 or 1.20.1**
 *   **[Fabric API](https://www.curseforge.com/minecraft/mc-mods/fabric-api)**
 *   **[Fabric Language Kotlin](https://www.curseforge.com/minecraft/mc-mods/fabric-language-kotlin)** (REQUIRED. Install it alongside this mod - FOR FABRIC ONLY.)
+
+Bedrock:
+
+*   **Minecraft Bedrock 26.40 or newer** — get the `.mcaddon` from the **[Bedrock page](https://www.curseforge.com/minecraft-bedrock/addons/netherite-octoarachnopod)**. Nothing else is needed.
 
 ## 📜 Full changelog
 
@@ -501,7 +506,7 @@ ArachnoMod is a derivative of **[minecraft-spider](https://github.com/TheCymaera
 
 *   Re-use this mod's assets or code **commercially** anywhere else.
 *   **Port or re-release this mod** for other Minecraft versions, loaders, platforms, games, or media — official ports are made by me and planned ahead. If you want one, ask.
-*   **Rehost or redistribute the mod files** outside CurseForge. If you downloaded this jar anywhere else, it may be modified or malicious — the only official source is this CurseForge page.
+*   **Rehost or redistribute the mod files** outside CurseForge. If you downloaded this jar anywhere else, it may be modified or malicious — the only official sources are this CurseForge page and its Bedrock twin.
 
 For anything not covered here, ask: **@iR3DN4X**.
 

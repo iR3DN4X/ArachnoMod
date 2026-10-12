@@ -1,0 +1,22 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Netherite Octoarachnopod (Resource Pack)",
+    "description": "ArachnoMod by iR3DN4X: the spider's legs, its camouflage, the spawn egg and the Spider Tamer.",
+    "uuid": "11f2778b-579c-4607-8824-0dd8c02fb711",
+    "version": [1, 2, 7],
+    "min_engine_version": [1, 26, 40]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "78eeef62-55a3-4dd6-a177-9c071ef4fc84",
+      "version": [1, 2, 7]
+    }
+  ],
+  "metadata": {
+    "authors": ["iR3DN4X"],
+    "license": "Custom source-available license (LICENSE.md)",
+    "url": "https://github.com/iR3DN4X/ArachnoMod"
+  }
+}

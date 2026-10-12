@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Chase sweep</title>
+<pre id="out">running...</pre>
+<script type="module">
+  // Runs chase.html once per (?configs= x ?runs=) combination, each in its own iframe (so each
+  // gets a fresh copy of the pack), and tabulates the numbers that matter for "does it drag, does
+  // it keep up". ?configs= is a |-separated list of extra query strings for chase.html, ?runs= a
+  // |-separated list of scenarios. The tunnel/scene checks are separate (ai.html).
+  const out = document.getElementById("out");
+  const params = new URLSearchParams(location.search);
+  const configs = (params.get("configs") || "java=1|").split("|");
+  const runs = (params.get("runs") || "terrain=dunes|terrain=dunes&pattern=stopgo&speed=5.6|terrain=dunes&pattern=zigzag|terrain=flat&pattern=stopgo&speed=5.6|terrain=dunes&speed=5.6").split("|");
+  const runOne = (query) => new Promise((resolve) => {
+    const f = document.createElement("iframe");
+    f.style.display = "none";
+    f.src = "/test/chase.html?" + query;
+    const started = Date.now();
+    const poll = setInterval(() => {
+      let text = "";
+      try { text = f.contentDocument.getElementById("out").textContent; } catch (e) {}
+      if ((text && text !== "running...") || Date.now() - started > 60000) {
+        clearInterval(poll);
+        f.remove();
+        try { resolve(JSON.parse(text)); } catch (e) { resolve({ crash: "no result: " + text.slice(0, 200) }); }
+      }
+    }, 200);
+    document.body.appendChild(f);
+  });
+  const rows = [];
+  for (const config of configs) {
+    const totals = { red: 0, huds: 0, worst: 0, dist: 0, gate: 0, steps: 0, minG: 99, n: 0 };
+    const cells = [];
+    for (const run of runs) {
+      const r = await runOne(`${run}&${config}`);
+      if (r.crash) { cells.push(`CRASH ${r.crash.slice(0, 120)}`); continue; }
+      const [red, huds] = r.feet.redDragHuds.split("/").map(Number);
+      totals.red += red; totals.huds += huds; totals.worst = Math.max(totals.worst, r.feet.slipMaxWorstLeg);
+      totals.dist += r.mean.distance; totals.gate += r.fractionOfTicks.slowedByComfortGate;
+      totals.steps += r.feet.stepsPerSecondPerLeg; totals.minG = Math.min(totals.minG, r.support.minGroundedLegs); totals.n++;
+      cells.push(`${run}: red ${red}/${huds} worst ${r.feet.slipMaxWorstLeg} dist ${r.mean.distance} gate ${r.fractionOfTicks.slowedByComfortGate} steps ${r.feet.stepsPerSecondPerLeg} minG ${r.support.minGroundedLegs}`);
+      out.textContent = rows.join("\n\n") + `\n\n[${config || "default"}] ...\n` + cells.join("\n");
+    }
+    const n = Math.max(1, totals.n);
+    rows.push(`[${config || "default"}] TOTAL red ${totals.red}/${totals.huds}  worst ${totals.worst}  dist ${(totals.dist / n).toFixed(2)}  gate ${(totals.gate / n).toFixed(2)}  steps ${(totals.steps / n).toFixed(2)}  minGrounded ${totals.minG}\n  ` + cells.join("\n  "));
+    out.textContent = rows.join("\n\n");
+  }
+  out.textContent = "DONE\n" + rows.join("\n\n");
+</script>

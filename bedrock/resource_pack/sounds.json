@@ -1,0 +1,14 @@
+{
+  "entity_sounds": {
+    "entities": {
+      "arachno:spider": {
+        "volume": 1.0,
+        "pitch": [ 0.8, 1.2 ],
+        "events": {
+          "hurt": "game.player.hurt",
+          "death": "game.player.hurt"
+        }
+      }
+    }
+  }
+}

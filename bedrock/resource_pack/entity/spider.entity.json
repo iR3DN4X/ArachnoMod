@@ -1,0 +1,13 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "arachno:spider",
+      "materials": { "default": "entity_alphatest" },
+      "textures": { "default": "textures/blocks/netherite_block" },
+      "geometry": { "default": "geometry.arachno_spider_hitbox" },
+      "render_controllers": [ "controller.render.arachno_spider" ],
+      "spawn_egg": { "base_color": "#909090", "overlay_color": "#3a3a3a" }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mob suite</title>
+<pre id="out">running...</pre>
+<script type="module">
+  // Runs every mob.html case in its own iframe (a fresh copy of the pack each) and lists the results.
+  const out = document.getElementById("out");
+  const CASES = ["spawn", "chasebite", "armour", "kill", "peaceful", "tame", "camo", "onlyone", "lost", "commands", "groom"];
+  const results = [];
+  for (const c of CASES) {
+    const text = await new Promise((resolve) => {
+      const f = document.createElement("iframe");
+      f.style.display = "none";
+      f.src = `/test/mob.html?case=${c}`;
+      const started = Date.now();
+      const poll = setInterval(() => {
+        let t = "";
+        try { t = f.contentDocument.getElementById("out").textContent; } catch (e) {}
+        if ((t && t !== "running...") || Date.now() - started > 90000) { clearInterval(poll); f.remove(); resolve(t || `case=${c}\nFAIL timed out`); }
+      }, 200);
+      document.body.appendChild(f);
+    });
+    results.push(text);
+    out.textContent = results.join("\n\n");
+  }
+  const all = results.join("\n");
+  const fails = (all.match(/^(FAIL|CRASH)/gm) || []).length;
+  const passes = (all.match(/^PASS/gm) || []).length;
+  out.textContent = `DONE  ${passes} passed, ${fails} failed\n\n` + results.join("\n\n");
+</script>

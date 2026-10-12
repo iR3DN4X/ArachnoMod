@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gait trace (vs Java)</title>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<pre id="out">running...</pre>
+<script type="module">
+  // Mirror of the Java harness GaitTrace.kt, line for line: a size-0.6 netherite spider chasing a
+  // point that walks away along +x at 0.24 blocks/tick from tick 21, on a flat floor. Same driver
+  // order as Java (the body update, then the behaviour, then the harness sets next tick's size,
+  // speed and target). Prints the same GAITTRACE lines so the two logs can be compared directly.
+  const out = document.getElementById("out");
+  const lines = [];
+  const println = (s) => lines.push(s);
+  try {
+    const { __test, FLOOR } = await import("@minecraft/server");
+    const { Vec3 } = await import("/engine/vec.js");
+    const { SpiderBody } = await import("/engine/body.js");
+    const { netheriteSpider } = await import("/engine/presets.js");
+    const { applyBehaviour, TargetBehaviour } = await import("/engine/behaviour.js");
+    const { BedrockLevel } = await import("/platform.js");
+    const TICKS = 400, SETTLE = 100;
+    const f3 = (v) => v.toFixed(3), f2 = (v) => v.toFixed(2), f4 = (v) => v.toFixed(4), f1 = (v) => v.toFixed(1);
+    const level = new BedrockLevel(__test.dim);
+    const o = netheriteSpider(8);
+    const b = SpiderBody.fromSpawn(level, new Vec3(6.5, FLOOR + 1.5, 0.5), Number(new URLSearchParams(location.search).get("yaw") ?? -90), 0, o.bodyPlan, o.gallopGait, o.walkGait);
+    b.javaWalk = new URLSearchParams(location.search).get("bedrock") !== "1";   // Java's exact walk rule unless ?bedrock=1
+    let scale = 1.0, targetX = 9.5, simT = 0, beh = null, stepsTotal = 0;
+    const approach = (c, tg) => Math.min(c * 1.12, Math.max(c / 1.25, c + (tg - c) * 0.3));
+    const drive = () => {
+      if (simT >= 20) targetX += 0.24;
+      scale = approach(scale, 0.6);
+      b.setSizeScale(scale);
+      b.setSpeedScale(1.0);
+      const arrive = Math.min(b.walkGait.stationary.bodyHeight * 2, 4);
+      beh = new TargetBehaviour(new Vec3(targetX, FLOOR, 0.5), arrive);
+    };
+    drive();
+    const stats = [], bodyY = [];
+    while (simT < TICKS) {
+      level.blocks.newTick();
+      b.update();
+      if (beh) applyBehaviour(b, beh);
+      simT++;
+      if (!stats.length) b.legs.forEach(() => stats.push({ steps: 0, moving: 0, slipMax: 0, slipSum: 0, slipN: 0, stretchMax: 0, prevFoot: null, prevGrounded: false, wasMoving: false }));
+      b.legs.forEach((l, i) => { if (stats[i].wasMoving && !l.isMoving) stepsTotal++; });
+      if (simT > SETTLE) {
+        bodyY.push(b.position.y - FLOOR);
+        b.legs.forEach((l, i) => {
+          const s = stats[i], foot = l.endEffector, grounded = l.isGrounded();
+          if (grounded && s.prevGrounded && !l.isMoving && !s.wasMoving) {
+            const slip = foot.distance(s.prevFoot);
+            s.slipMax = Math.max(s.slipMax, slip); s.slipSum += slip; s.slipN++;
+          }
+          if (l.isMoving) s.moving++;
+          if (l.isMoving && !s.wasMoving) s.steps++;
+          const total = l.legPlan.segments.reduce((a, sg) => a + sg.length, 0);
+          s.stretchMax = Math.max(s.stretchMax, l.chain.root.distance(foot) / total);
+        });
+      }
+      b.legs.forEach((l, i) => { stats[i].prevFoot = l.endEffector.copy(); stats[i].prevGrounded = l.isGrounded(); stats[i].wasMoving = l.isMoving; });
+      if (simT % 20 === 0) {
+        const g = b.legs.filter((l) => l.isGrounded()).length;
+        const e = b.orientation.getEulerAnglesYXZ();
+        println(`GAITTRACE t=${simT} pos=(${f3(b.position.x)}, ${f3(b.position.y - FLOOR)}, ${f3(b.position.z)}) yawDeg=${f1(e.y * 180 / Math.PI)} size=${f3(b.sizeScale)} v=${f3(b.velocity.length() * 20)} grounded=${g}/8 steps=${stepsTotal}`);
+      }
+      if (simT === TICKS) {
+        const secs = (TICKS - SETTLE) / 20;
+        const mean = bodyY.reduce((a, c) => a + c, 0) / bodyY.length;
+        println(`GAITTRACE bodyY mean=${f3(mean)} p2p=${f3(Math.max(...bodyY) - Math.min(...bodyY))}`);
+        stats.forEach((s, i) => println(`GAITTRACE leg${i} steps/s=${f2(s.steps / secs)} stepping=${f2(s.moving / (TICKS - SETTLE))} slipMax=${f4(s.slipMax)} slipMean=${f4(s.slipN ? s.slipSum / s.slipN : 0)} stretchMax=${f2(s.stretchMax)}`));
+        break;
+      }
+      drive();
+    }
+  } catch (e) {
+    lines.push("CRASH " + e + "\n" + (e.stack || ""));
+  }
+  out.textContent = lines.join("\n");
+</script>
