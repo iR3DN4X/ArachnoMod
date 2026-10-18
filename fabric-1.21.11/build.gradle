@@ -1,0 +1,86 @@
+// ArachnoMod - Fabric 1.21.11 port of TheCymaera/minecraft-spider
+//
+// Build:  gradle build      -> JAR appears in build/libs/
+// Run:    gradle runClient  (singleplayer dev client)
+//
+// ============================================================================================
+// 1.21.11 is the LAST OBFUSCATED Minecraft (26.1 is the first that ships real names), so this
+// build is the classic remapping setup, like the 1.21.1 lead - NOT the 26.1.2 one:
+//
+//   * plugin id `fabric-loom` (remaps), with `mappings loom.officialMojangMappings()` - Mojang's
+//     version JSON for 1.21.11 still carries client_mappings / server_mappings.
+//   * mods are `modImplementation` (remapped), the access widener namespace is `named`.
+//
+// The SOURCE, however, starts from the Fabric 26.1.2 port: 1.21.11 is one release before 26.1,
+// so its API is far closer to 26.1.2 than to 1.21.1 (Identifier, EntitySpawnReason, the Input
+// record, item definitions, PermissionSet...). Whatever differs was looked up with javap in the
+// remapped 1.21.11 jar.
+// ============================================================================================
+//
+// TOOLCHAIN
+//   fabric-loom ................... 1.16.3   (same Loom as the 26.1.2 build; needs Gradle 9.x)
+//   Minecraft ..................... 1.21.11  (Java 21)
+//   fabric-loader ................. 0.19.3
+//   fabric-api .................... 0.141.6+1.21.11
+//   fabric-language-kotlin ........ 1.13.13+kotlin.2.4.10
+//   Kotlin Gradle plugin .......... 2.4.10   (MUST match the Kotlin FLK bundles)
+//   Gradle ........................ 9.4.0, launched on JDK 21
+
+plugins {
+    id 'fabric-loom' version '1.16.3'
+    id 'org.jetbrains.kotlin.jvm' version '2.4.10'
+    id 'java'
+}
+
+group = 'com.heledron'
+version = '1.8.5'
+
+base {
+    archivesName = 'arachnomod_fabric_1.21.11'
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+loom {
+    accessWidenerPath = file('src/main/resources/arachnomod.accesswidener')
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.11'
+    mappings loom.officialMojangMappings()
+
+    modImplementation 'net.fabricmc:fabric-loader:0.19.3'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.141.6+1.21.11'
+    modImplementation 'net.fabricmc:fabric-language-kotlin:1.13.13+kotlin.2.4.10'
+
+    implementation 'com.electronwill.night-config:core:3.6.7'
+    implementation 'com.electronwill.night-config:toml:3.6.7'
+    include 'com.electronwill.night-config:core:3.6.7'
+    include 'com.electronwill.night-config:toml:3.6.7'
+}
+
+tasks.named('compileKotlin') {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand version: project.version
+    }
+}

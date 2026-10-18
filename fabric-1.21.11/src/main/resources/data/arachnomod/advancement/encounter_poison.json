@@ -1,0 +1,16 @@
+{
+  "parent": "arachnomod:encounter",
+  "display": {
+    "icon": { "id": "minecraft:warped_wart_block" },
+    "title": "We Are Venom",
+    "description": "Meet the warped tarantula. The Poison II is not a suggestion.",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "impossible": { "trigger": "minecraft:impossible" }
+  },
+  "requirements": [ [ "impossible" ] ]
+}

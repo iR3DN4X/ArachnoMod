@@ -32,17 +32,18 @@ It's a hunter.
 
 ***
 
-ArachnoMod runs on **Fabric, Forge and NeoForge — across 26.1.2, 1.21.1 and 1.20.1** — and on **Bedrock Edition** as an add-on:
+ArachnoMod runs on **Fabric, Forge and NeoForge — across 26.1.2, 1.21.11, 1.21.1 and 1.20.1** — and on **Bedrock Edition** as an add-on:
 
 | Loader   |Minecraft |Requires                                         |
 | -------- |--------- |------------------------------------------------ |
 | <strong>Fabric</strong> |<strong>26.1.2</strong> |Fabric API <strong>+</strong> Fabric Language Kotlin <em>(Java 25; Quilt Loader runs this jar too)</em> |
 | <strong>NeoForge</strong> |<strong>26.1.2</strong> |Kotlin for Forge <em>(Java 25; NeoForge 26.1.2.94+)</em> |
+| <strong>Fabric</strong> |<strong>1.21.11</strong> |Fabric API <strong>+</strong> Fabric Language Kotlin 1.13.13+ <em>(new in v1.8.5; Quilt Loader runs this jar too)</em> |
 | <strong>Fabric</strong> |<strong>1.21.1</strong> |Fabric API <strong>+</strong> Fabric Language Kotlin |
 | <strong>NeoForge</strong> |1.21.1    |Kotlin for Forge                                 |
 | <strong>Forge</strong> |1.20.1    |Kotlin for Forge <em>(also loads on NeoForge 1.20.1)</em> |
 | <strong>Fabric</strong> |<strong>1.20.1</strong> |Fabric API <strong>+</strong> Fabric Language Kotlin |
-| <strong>Bedrock</strong> |<strong>26.40+</strong> |Nothing — it's an add-on with its own page: <strong>[Netherite Octoarachnopod for Bedrock](https://www.curseforge.com/minecraft-bedrock/addons/netherite-octoarachnopod)</strong> <em>(currently matches Java v1.2.7)</em> |
+| <strong>Bedrock</strong> |<strong>26.40+</strong> |Nothing — it's an add-on with its own page: <strong>[Netherite Octoarachnopod for Bedrock](https://www.curseforge.com/minecraft-bedrock/addons/netherite-octoarachnopod-the-netherite-spider)</strong> <em>(currently matches Java v1.2.7)</em> |
 
 ***
 
@@ -236,17 +237,18 @@ Forge:
 
 Fabric:
 
-*   **Minecraft 1.21.1 or 1.20.1**
+*   **Minecraft 1.21.11, 1.21.1 or 1.20.1** (on 1.21.11, Fabric Language Kotlin **1.13.13 or newer**)
 *   **[Fabric API](https://www.curseforge.com/minecraft/mc-mods/fabric-api)**
 *   **[Fabric Language Kotlin](https://www.curseforge.com/minecraft/mc-mods/fabric-language-kotlin)** (REQUIRED. Install it alongside this mod - FOR FABRIC ONLY.)
 
 Bedrock:
 
-*   **Minecraft Bedrock 26.40 or newer** — get the `.mcaddon` from the **[Bedrock page](https://www.curseforge.com/minecraft-bedrock/addons/netherite-octoarachnopod)**. Nothing else is needed.
+*   **Minecraft Bedrock 26.40 or newer** — get the `.mcaddon` from the **[Bedrock page](https://www.curseforge.com/minecraft-bedrock/addons/netherite-octoarachnopod-the-netherite-spider)**. Nothing else is needed.
 
 ## 📜 Full changelog
 
-### v1.8.5 (latest) — all six builds
+### v1.8.5 (latest) — all seven builds
+- **NEW BUILD: FABRIC 1.21.11.** 🧵 You asked for it in the comments: the complete v1.8.5 now runs on **Minecraft 1.21.11** (Fabric, and Quilt through the same jar) — every variant, the Warding Idol, the laser pointer, the config book and all 76 settings. Needs Fabric API and Fabric Language Kotlin 1.13.13+.
 - **THE BITE HAS A REAL COOLDOWN NOW.** 🕰️ Every variant used to be able to hit you **once per second**, which turned any moment you couldn't break away into a shredder. It's now **one bite every 3 seconds** — the same for the netherite juggernaut, the camo stalker, the poison tarantula's lunge, the hunter, and the enraged boss. You still lose the fight if you stand there, but you now get a real window to drink, block, or run. Tune it with `attackCooldownTicks` (default **60** ticks; anything from **10** = twice a second to **120** = once every six seconds).
   - **Existing config files update themselves.** If you never touched the old value it moves to the new default automatically; **if you customised it, your number is kept exactly as-is.**
 - **KEEP IT OUT OF THE DIMENSIONS YOU DON'T WANT IT IN.** 🌍 Two new keys decide **where** the hunt happens. `spawnDimensions` is the list of the only dimensions it may spawn in — `spawnDimensions = "minecraft:overworld"` makes it an Overworld-only mod — and `blockedDimensions` is the opposite, banning it from the ones you name (`"minecraft:the_end"` = everywhere except the End). Both accept comma-separated lists, work with **modded** dimensions, and are case-insensitive, so a bare `overworld`, `nether` or `end` is understood. Both are **empty by default, so nothing changes unless you set them.** This also governs **following**: it will no longer chase you through a portal into a dimension it isn't allowed in. Spawn eggs and `/spider newinstance` stay unrestricted, so you can still summon one anywhere on purpose. _(Community request.)_

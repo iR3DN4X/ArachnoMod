@@ -155,14 +155,22 @@ It dies like any other mob. Beat it down, and it may drop a netherite ingot (50%
 
 ***
 
-## 📦 Requirements & installation
+## 📦 How to install
 
-*   **Minecraft Bedrock Edition 26.40 or newer.**
-*   **No experimental toggles needed.**
-*   **Install:** open the downloaded `.mcaddon` file and Minecraft imports both packs. In your world's settings, open **Behavior Packs** and activate **Netherite Octoarachnopod (Behavior Pack)**; its resource pack is added with it.
-*   Works in new and existing worlds. Back an existing world up first, as with any add-on.
+**You need Minecraft Bedrock Edition 26.40 or newer** on Windows, Android or iOS/iPadOS. **No experiments needed.** Xbox, PlayStation and Switch can't import add-on files.
+
+1.  **Download** the `.mcaddon` file from the **Files** tab.
+2.  **Open it with Minecraft.** On Windows, double-click it. On a phone or tablet, open it from your downloads and choose Minecraft. Minecraft opens and imports two packs: the behavior pack and the resource pack.
+3.  **Turn it on for a world.** Create a new world, or open an existing world's settings. Under **Behavior Packs**, find **Netherite Octoarachnopod (Behavior Pack)** and press **Activate**. Its resource pack is added automatically.
+4.  **Play.** The spider comes looking for you about a minute after you load in. In Creative, the **Netherite Octoarachnopod Spawn Egg** summons one straight away.
+
+**Good to know**
+
+*   **Import says the pack is already installed?** Then it is. Go straight to step 3.
+*   **No spider and no spawn egg?** The behavior pack isn't active in that world. Check the world's **Behavior Packs** tab.
+*   Works in new and existing worlds. Back up an existing world first, as with any add-on.
 *   Like any behavior pack, it may make Minecraft turn achievements off for that world.
-*   Tested in single-player on Windows. Realms and dedicated servers are untested so far — reports are welcome.
+*   Tested in single-player on Windows. Realms and dedicated servers are untested so far. Reports are welcome.
 
 ***
 
