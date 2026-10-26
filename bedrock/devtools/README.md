@@ -145,9 +145,11 @@ browser pane so a change can be checked before the user tests it in game.
 - `version.sh` - prints the version, or stops if the two manifests disagree anywhere: header, every
   module, the BP's dependency on the RP, and the `vX.Y.Z` in both pack NAMES (the name is the only
   place the game's pack list shows which copy is which). `package.sh` and `deploy.sh` both run it.
-- `package.sh <output dir>` - builds the release `NetheriteOctoarachnopod-Bedrock-<version>.mcaddon`
-  (both packs) and diffs the unpacked file against the source. v1.2.7 (2026-10-11) was the first
-  public one; it had no version in its pack names (added in 1.3.0).
+- `package.sh [output dir]` - builds the release `NetheriteOctoarachnopod-Bedrock-<version>.mcaddon`
+  (both packs) and diffs the unpacked file against the source. With no argument, every build goes
+  into a NEW folder `BEDROCK_ADDON_STAGED/v<version>_<date>_<time>` next to the project, with a
+  `BUILD_INFO.txt` (size, SHA-1). It refuses to overwrite a staged `.mcaddon`. v1.2.7 (2026-10-11)
+  was the first public one; it had no version in its pack names (added in 1.3.0).
 - `deploy.sh` - installs both packs as the game's DEVELOPMENT packs in versioned folders
   (`development_behavior_packs\arachnomod_bp_v<version>`, `development_resource_packs\arachnomod_rp_v<version>`),
   after removing every older `arachnomod_bp*` / `arachnomod_rp*` dev folder, then diffs the copies
