@@ -25,8 +25,9 @@ advancements can't come across, because Bedrock add-ons can't add them.
 
 > ⚠️ **Arachnophobia warning** — the movement is realistic on purpose. See the CurseForge page.
 
-**Download:** the only official distribution is the **CurseForge page** — jars found anywhere
-else may be modified or malicious.
+**Download:** the only official sources are the **CurseForge pages** and, for the Bedrock add-on
+only, its **[MCPEDL page](https://mcpedl.com/netherite-octoarachnopod-the-netherite-spider/)** —
+files found anywhere else may be modified or malicious.
 
 ## Repository layout
 

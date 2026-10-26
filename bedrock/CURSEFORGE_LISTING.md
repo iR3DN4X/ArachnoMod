@@ -312,7 +312,7 @@ Created by **iR3DN4X**. Based on **[TheCymaera/minecraft-spider](https://github.
 
 **You MAY:** play it anywhere, including servers and Realms; feature it in videos and streams, monetized or not; make resource packs, language packs and add-ons for it; and make non-commercial derivative works with credit — except ports.
 
-**You may NOT:** re-use its assets or code commercially; port or re-release it for other versions, platforms or games (official ports are made by me — if you want one, ask); or **rehost the add-on files** anywhere else. If you downloaded this `.mcaddon` from another site, it may be modified or malicious — the only official sources are my CurseForge pages.
+**You may NOT:** re-use its assets or code commercially; port or re-release it for other versions, platforms or games (official ports are made by me — if you want one, ask); or **rehost the add-on files** anywhere other than my official pages. If you downloaded this `.mcaddon` from another site, it may be modified or malicious — the only official sources are my CurseForge pages and this add-on's page on **MCPEDL** (_Netherite Octoarachnopod — The Netherite Spider_, uploaded by me).
 
 For anything not covered here, ask: **@iR3DN4X**.
 

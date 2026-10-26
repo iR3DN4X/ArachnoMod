@@ -32,9 +32,10 @@ All remaining content not belonging to Mojang/Microsoft or the above is the prop
 - Re-use this mod's assets or code **commercially** anywhere else.
 - **Port or re-release this mod** for other Minecraft versions, loaders, platforms, games, or
   media — official ports are made by me and planned ahead. If you want one, ask.
-- **Rehost or redistribute the mod files** outside CurseForge. If you downloaded this jar or
-  add-on anywhere else, it may be modified or malicious — the only official sources are my
-  CurseForge pages.
+- **Rehost or redistribute the mod files** outside my official pages. If you downloaded this jar
+  or add-on anywhere else, it may be modified or malicious — the only official sources are my
+  CurseForge pages and, for the Bedrock add-on only, its MCPEDL page
+  (https://mcpedl.com/netherite-octoarachnopod-the-netherite-spider/).
 
 ---
 

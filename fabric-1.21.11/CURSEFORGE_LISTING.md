@@ -505,7 +505,7 @@ ArachnoMod is a derivative of **[minecraft-spider](https://github.com/TheCymaera
 
 *   Re-use this mod's assets or code **commercially** anywhere else.
 *   **Port or re-release this mod** for other Minecraft versions, loaders, platforms, games, or media — official ports are made by me and planned ahead. If you want one, ask.
-*   **Rehost or redistribute the mod files** outside CurseForge. If you downloaded this jar anywhere else, it may be modified or malicious — the only official sources are this CurseForge page and its Bedrock twin.
+*   **Rehost or redistribute the mod files** outside my official pages. If you downloaded this jar anywhere else, it may be modified or malicious — the only official sources are this CurseForge page, its Bedrock twin, and the Bedrock add-on's page on MCPEDL.
 
 For anything not covered here, ask: **@iR3DN4X**.
 

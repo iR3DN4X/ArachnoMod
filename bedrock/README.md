@@ -7,7 +7,8 @@ the enraged boss, permadeath, the Warding Idol, the Spider Laser Pointer, the Sp
 (75 settings, saved in the world), Cymaera's debug view (`/spider debug`), the creative-mode pet
 fight, and the Nether rescue. Only the advancements are left out: Bedrock add-ons can't add them.
 
-**Download:** the CurseForge page is the only official distribution. See the root
+**Download:** the only official sources are the CurseForge page and the
+[MCPEDL page](https://mcpedl.com/netherite-octoarachnopod-the-netherite-spider/). See the root
 [`README.md`](../README.md) and [`THENETHERITEOCTOARACHNOPODMODNETHERITESPIDERLICENSE.md`](../THENETHERITEOCTOARACHNOPODMODNETHERITESPIDERLICENSE.md): the same source-available license
 covers this add-on.
 
