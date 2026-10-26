@@ -3,7 +3,7 @@
   "minecraft:entity": {
     "description": {
       "identifier": "arachno:spider",
-      "is_spawnable": true,
+      "is_spawnable": false,
       "is_summonable": true,
       "properties": {
         "arachno:variant": { "type": "int", "range": [0, 7], "default": 0, "client_sync": false },
@@ -20,6 +20,10 @@
           "pull_in_entities": false,
           "seats": { "position": [ 0.0, 0.7, 0.0 ] }
         }
+      },
+      "arachno:enraged": {
+        "minecraft:boss": { "hud_range": 64, "name": "Enraged Netherite Spider", "should_darken_sky": false },
+        "minecraft:health": { "value": 1000, "max": 1000 }
       }
     },
     "components": {
@@ -56,6 +60,7 @@
       "minecraft:persistent": {}
     },
     "events": {
+      "arachno:enrage": { "add": { "component_groups": [ "arachno:enraged" ] } },
       "arachno:tamed": { "add": { "component_groups": [ "arachno:saddle" ] } },
       "arachno:tamer_used": {
         "set_property": { "arachno:tamed": true },

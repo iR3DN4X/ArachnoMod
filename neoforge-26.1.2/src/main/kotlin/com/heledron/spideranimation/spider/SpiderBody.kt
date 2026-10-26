@@ -192,10 +192,18 @@ class SpiderBody(
         rotationalVelocity.set(rotVelocity.getEulerAnglesYXZ(Vector3f()))
     }
 
+    /** Move the whole spider - body, feet and step targets together, so nothing re-steps across
+     *  the jump - and bring it to a standstill there (the Nether rescue in SpiderSpawnManager). */
     fun teleport(newPosition: Vector3d) {
         val diff = Vector3d(newPosition).sub(position)
         position.set(newPosition)
-        for (leg in legs) leg.endEffector.add(diff)
+        velocity.set(0.0, 0.0, 0.0)
+        for (leg in legs) {
+            leg.endEffector.add(diff)
+            leg.previousEndEffector.add(diff)
+            leg.target.position.add(diff)
+        }
+        if (lungeTimer > 0) endLunge()
     }
 
     /**

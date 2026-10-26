@@ -129,3 +129,19 @@ export function camoSpider(chaseSpeed = 8, legStepSpeed = 1.1) {
   applyLineLegModel(o.bodyPlan, "moss");
   return o;
 }
+
+/** THE POISON variant (Java v1.3.0): the octopod skinned in warped wart block. Its rear-up/lunge
+ *  lives in SpiderBody.beginLunge and the mob's poison bite - presets are looks + gait only. */
+export function poisonSpider(chaseSpeed = 8, legStepSpeed = 1.1) {
+  const o = defaultSpider(chaseSpeed, legStepSpeed);
+  applyLineLegModel(o.bodyPlan, "warped_wart_block");
+  return o;
+}
+
+/** THE HUNTER (Java v1.4.0): the octopod skinned in black concrete. Its stalk lives in
+ *  SpiderAI.tickStalk; its fixed size and speed in the mob and the config. */
+export function hunterSpider(chaseSpeed = 8, legStepSpeed = 1.1) {
+  const o = defaultSpider(chaseSpeed, legStepSpeed);
+  applyLineLegModel(o.bodyPlan, "black_concrete");
+  return o;
+}

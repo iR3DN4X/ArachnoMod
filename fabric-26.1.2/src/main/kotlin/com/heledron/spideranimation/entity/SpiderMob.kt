@@ -33,6 +33,8 @@ import net.minecraft.world.effect.MobEffects
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.EntityDimensions
 import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.entity.Mob
 import net.minecraft.world.entity.EntitySpawnReason
 import net.minecraft.world.entity.SpawnGroupData
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier
@@ -46,6 +48,7 @@ import net.minecraft.world.level.Level
 import net.minecraft.world.level.ServerLevelAccessor
 import net.minecraft.world.phys.Vec3
 import org.joml.Vector3d
+import java.util.UUID
 import kotlin.math.sqrt
 
 /**
@@ -81,9 +84,19 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
     /** Set by the spawn manager BEFORE the first tick (the body is built lazily on tick 1). */
     var variant = SpiderVariant.NETHERITE
 
-    /** Tamed = docile: never attacks, but keeps every other behaviour (chase, growth, speed). */
+    /** Tamed = docile: never attacks a player, but keeps every other behaviour (it follows people
+     *  around, grows, keeps its speed). */
     var tamed = false
         private set
+
+    // THE PET'S FIGHT (v1.8.6): whoever tamed it is its owner for as long as it lives (the spider
+    // is never saved, so neither is this). While the owner is in CREATIVE, the mob they punch
+    // becomes its target - read off vanilla's own record of who a player last hit, the same one a
+    // wolf's "attack what my owner attacks" goal uses, so no loader-specific attack hooks needed.
+    // Nothing while it is ridden: the rider steers, and their punches are not orders.
+    private var ownerId: UUID? = null
+    private var ownerHitStamp = 0       // the owner's lastHurtMobTimestamp already acted on
+    private var fightTarget: LivingEntity? = null
 
     // ENRAGED boss mode (netherite only): fed a netherite ingot, it gains health/speed/damage,
     // a red boss bar, a name, a particle aura — and always drops a FULL netherite block.
@@ -207,6 +220,8 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         if (stack.item === SpiderAnimationMod.SPIDER_TAMER) {
             if (level is ServerLevel && !tamed) {
                 tamed = true
+                ownerId = player.uuid
+                ownerHitStamp = player.lastHurtMobTimestamp   // only hits from now on are orders
                 level.sendParticles(ParticleTypes.HEART, x, y + 1.5, z, 9, 1.2, 1.2, 1.2, 0.02)
                 level.playSoundAt(Vector3d(x, y, z), SoundEvents.PLAYER_LEVELUP, 1.0f, 1.2f)
             }
@@ -335,6 +350,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         deltaMovement = Vec3.ZERO
 
         val rider = firstPassenger as? Player
+        updateFight(level, body, ridden = rider != null)
         if (rider != null) {
             tickRidden(body, rider)
             return
@@ -384,8 +400,13 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // (ticked once per tick from AppState.driveWildSpiders — not here, so mode timers don't
         // run double-speed). This mob keeps what's physical about itself: size and the bite.
 
-        // Nearest player (server-side ServerPlayer list).
-        val nearest = level.players().minByOrNull {
+        // Nearest player for SIZE: anyone but a spectator - it still shrinks near you in creative.
+        val nearest = level.players().filter { !it.isSpectator }.minByOrNull {
+            it.distanceToSqr(body.position.x, body.position.y, body.position.z)
+        }
+        // ...and the nearest it actually NOTICES (no spectators; nobody in creative unless it is
+        // tamed - SpiderAI.notices): who it sizes down to follow into a room.
+        val quarry = level.players().filter { SpiderAI.notices(it, tamed) }.minByOrNull {
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
         }
 
@@ -472,11 +493,15 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         // early notice. Outdoors this changes nothing at all: roomAt returns null unless the prey
         // is genuinely in an enclosed, roofed space, so the towering approach is untouched.
         val fitLeadDistance = 14.0 + 6.0 * currentScale
-        if (!squeezing && nearest != null && horizontalDistance < fitLeadDistance) {
+        val quarryDistance = quarry?.let {
+            val dx = it.x - body.position.x; val dz = it.z - body.position.z
+            sqrt(dx * dx + dz * dz)
+        } ?: Double.MAX_VALUE
+        if (!squeezing && quarry != null && quarryDistance < fitLeadDistance) {
             // roomAt, not confinementAt: a fact about where the prey stands, not about this
             // body. Gating it on the spider's own height would mean a giant never learns it has
             // to shrink to follow you in - which is exactly when it needs to.
-            SafeGroundFinder.roomAt(level, nearest.x, nearest.y, nearest.z)?.let { room ->
+            SafeGroundFinder.roomAt(level, quarry.x, quarry.y, quarry.z)?.let { room ->
                 targetScale = targetScale.coerceAtMost(fitFor(room))
             }
         }
@@ -506,6 +531,7 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
             var blinded = false
             for (player in level.players()) {
                 if (!player.isAlive) continue
+                if (player.isCreative || player.isSpectator) continue          // it does not see them
                 val distSqr = player.distanceToSqr(body.position.x, body.position.y, body.position.z)
                 if (distSqr > blindRange * blindRange) continue
                 if (WardRegistry.isSafe(level, player.x, player.z)) continue   // sheltering past a warding idol
@@ -516,31 +542,83 @@ class SpiderMob(type: EntityType<out SpiderMob>, level: Level) : Monster(type, l
         }
         // Its quarry is the nearest player it can actually REACH: anyone sheltering more than the
         // bite band inside a warding idol is out of bounds, however close they stand. The enraged boss
-        // ignores idols: it bites whoever is nearest.
-        val prey = if (enraged || nearest == null || !WardRegistry.isSafe(level, nearest.x, nearest.z)) nearest
-            else level.players().filter { !WardRegistry.isSafe(level, it.x, it.z) }.minByOrNull {
-                it.distanceToSqr(body.position.x, body.position.y, body.position.z)
+        // ignores idols: it bites whoever is nearest. Nobody in creative or spectator, ever.
+        val prey = level.players().filter {
+            !it.isCreative && !it.isSpectator && (enraged || !WardRegistry.isSafe(level, it.x, it.z))
+        }.minByOrNull {
+            it.distanceToSqr(body.position.x, body.position.y, body.position.z)
+        }
+        val fighting = ecsEntity?.let { SpiderAI.isFighting(it) } ?: false
+        val target = fightTarget
+        if (tamed && fighting && target != null && target.isAlive) {
+            bite(body, target)                        // the mob its owner punched
+        } else if (!tamed && hunting && prey != null && prey.isAlive) {
+            bite(body, prey)
+        }
+    }
+
+    /**
+     * One go at [target] if it is in (scaled) reach and the bite is off cooldown - a hunted player,
+     * or the mob a tamed spider's owner punched. The POISON variant rears up and LUNGES first, and
+     * only a bite landed out of the lunge connects (with Poison II in it).
+     */
+    private fun bite(body: SpiderBody, target: LivingEntity) {
+        val reach = ATTACK_REACH * currentScale.coerceAtMost(REACH_SCALE_CAP)
+        val distSqr = target.distanceToSqr(body.position.x, body.position.y, body.position.z)
+        if (variant == SpiderVariant.POISON) {
+            val lungeRange = reach * LUNGE_RANGE_FACTOR
+            if (attackCooldown == 0 && !body.isLunging && distSqr <= lungeRange * lungeRange) {
+                body.beginLunge(Vector3d(target.x - body.position.x, 0.0, target.z - body.position.z))
+                attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()   // recovery starts at the leap
             }
-        if (!tamed && hunting && prey != null && prey.isAlive) {
-            val reach = ATTACK_REACH * currentScale.coerceAtMost(REACH_SCALE_CAP)
-            val distSqr = prey.distanceToSqr(body.position.x, body.position.y, body.position.z)
-            if (variant == SpiderVariant.POISON) {
-                val lungeRange = reach * LUNGE_RANGE_FACTOR
-                if (attackCooldown == 0 && !body.isLunging && distSqr <= lungeRange * lungeRange) {
-                    body.beginLunge(Vector3d(prey.x - body.position.x, 0.0, prey.z - body.position.z))
-                    attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()   // recovery starts at the leap
-                }
-                if (body.isLungeStriking && distSqr <= reach * reach) {
-                    prey.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
-                    prey.addEffect(MobEffectInstance(MobEffects.POISON,
-                        (Config.POISON_EFFECT_SECONDS.get() * 20.0).toInt(), 1), this)
-                    body.endLunge()   // bite landed — end the strike, so one lunge = one bite
-                }
-            } else if (attackCooldown == 0 && distSqr <= reach * reach) {
-                prey.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
-                attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()
+            if (body.isLungeStriking && distSqr <= reach * reach) {
+                target.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
+                target.addEffect(MobEffectInstance(MobEffects.POISON,
+                    (Config.POISON_EFFECT_SECONDS.get() * 20.0).toInt(), 1), this)
+                body.endLunge()   // bite landed — end the strike, so one lunge = one bite
+            }
+        } else if (attackCooldown == 0 && distSqr <= reach * reach) {
+            target.hurt(damageSources().mobAttack(this), (biteHearts() * 2.0).toFloat())
+            attackCooldown = Config.ATTACK_COOLDOWN_TICKS.get()
+        }
+    }
+
+    /**
+     * THE PET'S FIGHT: keep [fightTarget] up to date and hand it to SpiderAI. A new punch by the
+     * owner - noticed as a change in vanilla's lastHurtMobTimestamp - is an order, but only while
+     * the spider is tamed and NOT ridden, the owner is in this world and in CREATIVE, and what
+     * they hit is a mob (never a player, an armour stand or the spider itself). The target is
+     * dropped when it dies or leaves, when the owner stops being in creative, or once ridden; the
+     * AI also gives up on one that gets past its chase range.
+     */
+    private fun updateFight(level: ServerLevel, body: SpiderBody, ridden: Boolean) {
+        val owner = ownerId?.let { level.getPlayerByUUID(it) }
+        val ordersCount = tamed && !ridden && owner != null && owner.isCreative
+        if (owner != null) {
+            val stamp = owner.lastHurtMobTimestamp
+            if (stamp != ownerHitStamp) {
+                ownerHitStamp = stamp            // a punch while riding is swallowed, not saved for later
+                val hit = owner.lastHurtMob
+                if (ordersCount && hit is Mob && hit !== this && hit.isAlive) fightTarget = hit
             }
         }
+        val target = fightTarget
+        if (!ordersCount || target == null || !target.isAlive || target.isRemoved || target.level() !== level) {
+            fightTarget = null
+        }
+        ecsEntity?.let { SpiderAI.setPet(it, body, tamed, fightTarget) }
+    }
+
+    /** Where the simulated body is (the Nether rescue in SpiderSpawnManager reads it). */
+    val simulatedBody: SpiderBody? get() = body
+
+    /** TELEPORT this very spider - same variant, health, rage and taming - so its feet stand at
+     *  ([x], [y], [z]): body, feet and step targets move together, and the AI starts over there. */
+    fun rescueTo(x: Double, y: Double, z: Double) {
+        val b = body ?: return
+        b.teleport(Vector3d(x, y + b.walkGait.stationary.bodyHeight, z))
+        ecsEntity?.let { SpiderAI.onTeleported(it, b) }
+        setPos(b.position.x, b.position.y, b.position.z)
     }
 
     /**

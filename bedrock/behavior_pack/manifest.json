@@ -1,23 +1,23 @@
 {
   "format_version": 2,
   "header": {
-    "name": "Netherite Octoarachnopod (Behavior Pack)",
+    "name": "Netherite Octoarachnopod v1.8.6 (Behavior Pack)",
     "description": "ArachnoMod by iR3DN4X: one relentless, procedurally animated spider that hunts you across the world.",
     "uuid": "7d9aaa5f-a5ba-4178-89b9-fb5d4e4110c9",
-    "version": [1, 2, 7],
+    "version": [1, 8, 6],
     "min_engine_version": [1, 26, 40]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "72e28eae-d4a8-498b-94a6-153d311db4de",
-      "version": [1, 2, 7]
+      "version": [1, 8, 6]
     },
     {
       "type": "script",
       "language": "javascript",
       "uuid": "4aee6d5f-d2ad-4905-b1fa-90ca06b87d1c",
-      "version": [1, 2, 7],
+      "version": [1, 8, 6],
       "entry": "scripts/main.js"
     }
   ],
@@ -27,8 +27,12 @@
       "version": "2.9.0"
     },
     {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.1.0"
+    },
+    {
       "uuid": "11f2778b-579c-4607-8824-0dd8c02fb711",
-      "version": [1, 2, 7]
+      "version": [1, 8, 6]
     }
   ],
   "metadata": {

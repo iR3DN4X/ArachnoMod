@@ -2,7 +2,7 @@
 // and the IK chain (straightened toward the knee-up pose, then solved with FABRIK). Faithful.
 
 import { Vec3, UP, DOWN, lerp } from "./vec.js";
-import { SplitDistance, SplitDistanceZone, EMERGENCY, emergencyStepsOn } from "./gait.js";
+import { SplitDistance, SplitDistanceZone, EMERGENCY, STEP, emergencyStepsOn } from "./gait.js";
 import { KinematicChain, ChainSegment } from "./chain.js";
 
 export class LegTarget {
@@ -46,6 +46,12 @@ export class Leg {
   get isOutsideTriggerZone() { return !this.triggerZone.contains(this.endEffector); }
   get isUncomfortable() { return !this.comfortZone.contains(this.endEffector); }
   isGrounded() { return this.touchingGround && !this.isMoving && !this.isDisabled; }
+  /** How far out the foot is in its comfort zone: under 1 inside, 1 or more = uncomfortable. */
+  comfortUsed() {
+    const z = this.comfortZone;
+    return Math.max(z.center.horizontalDistance(this.endEffector) / z.size.horizontal,
+      z.center.verticalDistance(this.endEffector) / z.size.vertical);
+  }
 
   updateMemo() {
     const spider = this.spider;
@@ -161,7 +167,12 @@ export class Leg {
 
       const targetY = this.target.position.y + gait.legLiftHeight;
       const hDistance = this.endEffector.horizontalDistance(this.target.position);
-      if (hDistance > gait.legDropDistance) {
+      // STEP.stayLifted (gait.js): a foot that has not landed yet stays up instead of chasing its
+      // target along the ground. Java's exact step while the AI lines up for an opening
+      // (carefulGait - see emergencyStepsOn).
+      const airborne = STEP.stayLifted && !spider.javaWalk && !spider.carefulGait &&
+        this.endEffector.distance(this.target.position) >= 0.0001;
+      if (hDistance > gait.legDropDistance || airborne) {
         const d = targetY - this.endEffector.y;
         this.endEffector.y = Math.abs(d) < legMoveSpeed ? targetY : this.endEffector.y + legMoveSpeed * Math.sign(d);
       }

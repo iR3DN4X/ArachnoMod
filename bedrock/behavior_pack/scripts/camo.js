@@ -15,6 +15,12 @@ const STONE = BLOCKS.stone || [TEXTURES.indexOf("textures/blocks/stone"), "step.
 const MOSS = BLOCKS.moss_block || STONE;
 export const CAMO_SPAWN_TEX = MOSS[0];   // Java's moss placeholder until each leg first lands
 
+// Snow a foot sinks into rather than stands on (no collision - see blocks.js) is still the surface
+// you SEE: snowy biomes are carpeted in thin snow layers over grass, and a spider wearing the grass
+// underneath stood out green against the white. (Java skips one-layer snow the same way; Bedrock
+// counts every layer as cover.)
+const SNOW_COVER = new Set(["snow_layer", "powder_snow"]);
+
 const cache = new Map();
 export const unknownBlocks = new Set();   // ids that fell back to stone (for the developer check)
 
@@ -46,14 +52,21 @@ export function camoFor(id) {
 }
 
 /** GroundCamo.blockUnder: the first block with collision at or just below a point (skipping grass
- *  tufts and other decoration - a foot rests on the dirt, not the tuft), or null over air. */
+ *  tufts and other decoration - a foot rests on the dirt, not the tuft), or null over air. Snow on
+ *  top of that block wins: a foot a hair below the grass top, or brushing the side of the next
+ *  block up a snowy slope, starts its scan inside the grass and would flash green for a frame. */
 export function blockUnder(blocks, pos, depth = 3) {
   const x = Math.floor(pos.x), z = Math.floor(pos.z);
   const startY = Math.floor(pos.y + 0.01);
   for (let dy = 0; dy <= depth; dy++) {
-    const c = blocks.cell(x, startY - dy, z);
+    const y = startY - dy;
+    const c = blocks.cell(x, y, z);
     if (c.air || !c.loaded) continue;
-    if (c.collision) return c.id;
+    if (SNOW_COVER.has(c.id)) return c.id;
+    if (c.collision) {
+      const above = blocks.cell(x, y + 1, z);
+      return SNOW_COVER.has(above.id) ? above.id : c.id;
+    }
   }
   return null;
 }

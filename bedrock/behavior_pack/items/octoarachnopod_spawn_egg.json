@@ -1,0 +1,14 @@
+{
+  "format_version": "1.21.60",
+  "minecraft:item": {
+    "description": {
+      "identifier": "arachno:octoarachnopod_spawn_egg",
+      "menu_category": { "category": "nature", "group": "minecraft:itemGroup.name.mobEgg" }
+    },
+    "components": {
+      "minecraft:icon": "arachno_spider_spawn_egg",
+      "minecraft:display_name": { "value": "item.arachno:octoarachnopod_spawn_egg.name" },
+      "minecraft:entity_placer": { "entity": "arachno:spider" }
+    }
+  }
+}

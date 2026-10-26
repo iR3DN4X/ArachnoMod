@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Client replay</title>
-<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js", "@minecraft/server-ui": "/test/mcuistub.js" } }</script>
 <pre id="out">running...</pre>
 <script type="module">
   // Runs the real main.js, then replays the REAL client files from resource_pack/ (the
@@ -115,6 +115,7 @@
     let frozenFrames = 0, movingFrames = 0, lagSum = 0, lagN = 0, serverStepSum = 0, serverStepN = 0;
     const apiCalls = {};
     let framesMissingLegs12 = 0, framesMissingLegs = 0, worstStray = 0, worstStrayAt = null, entitiesSpawned = new Set();
+    let hopTicks = 0, hopFrames = 0, hopLiftMax = 0, hopLiftMid = Infinity;
     for (let tick = 1; tick <= 400; tick++) {
       if (tick === 80) __test.player.location = { x: OX + 60.5, y: FLOOR, z: OX + 0.5 };
       const c0 = { ...__test.counts };
@@ -124,6 +125,7 @@
       apiCalls[phase] = apiCalls[phase] || { ticks: 0, rays: 0, blocks: 0, writes: 0, maxRays: 0, maxWrites: 0 };
       const ac = apiCalls[phase]; ac.ticks++; ac.rays += dc.rays; ac.blocks += dc.blocks; ac.writes += dc.writes; ac.maxRays = Math.max(ac.maxRays, dc.rays); ac.maxWrites = Math.max(ac.maxWrites, dc.writes);
       for (const e of legs()) entitiesSpawned.add(e.id);
+      hopTicks += legs().filter((e) => e.props["arachno:hop"] > 0).length;
       serverTickDone();
       const raw = rawLegs();
       prevRawHip = lastRawHip; lastRawHip = new Map([...raw].map(([id, segs]) => [id, segs[0].start]));
@@ -138,6 +140,9 @@
         const visibleHips = [];
         for (const [id, segs] of drawn) {
           for (const sg of segs) if (![sg.start.x, sg.start.y, sg.start.z, sg.end.x, sg.end.y, sg.end.z].every(Number.isFinite)) nanSeen = true;
+          // the drawn hop: how high a one-tick step's foot is drawn above the (flat) floor mid-glide
+          const cs = cli.get(id);
+          if (cs && cs.props["arachno:hop"] > 0) { hopFrames++; hopLiftMax = Math.max(hopLiftMax, segs[2].end.y - FLOOR); if (f < FRAMES_PER_TICK - 1) hopLiftMid = Math.min(hopLiftMid, segs[2].end.y - FLOOR); }
           if (!visible(segs)) continue;
           visibleHips.push(segs[0].start);
           const gap = Math.max(segs[0].end.distance(segs[1].start), segs[1].end.distance(segs[2].start));
@@ -187,6 +192,8 @@
     report.smoothing = NOSMOOTH ? "OFF (pre_animation skipped)" : "on";
     report.connectivity = { framesReplayed: frames, worstGapStanding: +worstGapSettled.toExponential(2), worstGapWhileRunning: +worstGapMoving.toFixed(3) };
     report.settledDrawnVsServer = +worstSettled.toExponential(2);
+    report.hop = { legTicksWithAHop: hopTicks, framesDrawn: hopFrames, highestFootAboveFloor: +hopLiftMax.toFixed(3),
+      lowestMidGlideFoot: hopLiftMid === Infinity ? null : +hopLiftMid.toFixed(3) };
     report.serverFeetAboveFloor = { min: Math.min(...feetAboveFloor), max: Math.max(...feetAboveFloor) };
     report.worstFootLagEndOfTick = +worstLagBlocks.toFixed(3);
     report.apiCallsPerTick = Object.fromEntries(Object.entries(apiCalls).map(([k, a]) => [k, { rays: +(a.rays / a.ticks).toFixed(1), blockReads: +(a.blocks / a.ticks).toFixed(1), propertyWrites: +(a.writes / a.ticks).toFixed(1), maxRays: a.maxRays, maxWrites: a.maxWrites }]));

@@ -60,8 +60,16 @@ S+=("v.ui = (v.chg && v.since < 0.15) ? v.ui * 0.5 + math.clamp(v.since, 0.03, 0
 S+=("v.since = v.chg ? 0 : v.since;")
 S+=("v.t = v.chg ? v.dt : v.t + v.dt;")   # count THIS frame: the glide ends exactly on the new pose
 S+=("v.al = math.clamp(v.t / math.clamp(v.ui, 0.03, 0.15), 0, 1);")
+# THE HOP (round 32, render.js stepHop): a step the engine began and finished inside one tick slid
+# the foot along the ground. The server sends how high to arc it (arachno:hop); the foot (joint 3)
+# rises and falls on a parabola over the glide - 0 at both ends, so the leg still lands exactly on
+# the server's pose - and the knee (joint 2) by half as much, so the shin keeps its length.
+S+=("v.hy = v.snap ? 0 : $(prop hop) * 4 * v.al * (1 - v.al);")
 for j in "${JOINTS[@]}"; do for c in "${AX[@]}"; do
-  S+=("v.o_$c$j = v.s_$c$j * (1 - v.al);")
+  lift=""
+  [ "$c$j" = "y3" ] && lift=" + v.hy"
+  [ "$c$j" = "y2" ] && lift=" + v.hy * 0.5"
+  S+=("v.o_$c$j = v.s_$c$j * (1 - v.al)$lift;")
   S+=("v.l_$c$j = $(prop $c$j);")
 done; done
 for s in "${SEGS[@]}"; do

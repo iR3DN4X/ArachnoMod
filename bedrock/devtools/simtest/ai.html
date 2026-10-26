@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>AI scenarios</title>
-<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js", "@minecraft/server-ui": "/test/mcuistub.js" } }</script>
 <pre id="out">running...</pre>
 <script type="module">
   // Runs the pack's real main.js (engine + SpiderAI + sizing) in one obstacle SCENE and reports
@@ -61,7 +61,9 @@
 
     if (new URLSearchParams(location.search).get("ramp") !== null) { const { setComfortRecovery } = await import("/engine/behaviour.js"); setComfortRecovery(Number(new URLSearchParams(location.search).get("ramp"))); }
     {   // the round-14 emergency-step knobs (?emerg= 9 = off, ?eunc=0|1, ?eplant=, ?forced=0|1)
-      const { EMERGENCY } = await import("/engine/gait.js");
+      const { EMERGENCY, STEP } = await import("/engine/gait.js");
+      if (params.get("lifted") !== null) STEP.stayLifted = params.get("lifted") === "1";
+      if (params.get("comfort") !== null) EMERGENCY.comfort = Number(params.get("comfort"));
       if (params.get("emerg") !== null) EMERGENCY.stretch = Number(params.get("emerg"));
       if (params.get("eunc") !== null) EMERGENCY.uncomfortable = params.get("eunc") === "1";
       if (params.get("eplant") !== null) EMERGENCY.minPlantedFraction = Number(params.get("eplant"));

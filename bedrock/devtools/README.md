@@ -66,6 +66,13 @@ browser pane so a change can be checked before the user tests it in game.
   feet. `?java=1` = Java's rules; emergency-step knobs `?emerg= ?eunc= ?eplant= ?forced=`.
   Round 14 (2026-10-10), dunes at 4.3 b/s: worst slip 1.09 (Java) -> 0.07, steps/s 2.2 -> 3.1,
   comfort-slowed ticks 91% -> 62%, fewest planted feet 1 -> 3; at 5.6 b/s worst slip 1.53 -> 0.37.
+  Round 32 added `?pattern=circle` (`?r=`) and `cross`, `?lifted=0` / `?comfort=` (the round-32
+  knobs, also on ai.html), and the measures the debug view's colours stand for: `skating` (a foot
+  moving sideways while ON the ground at both ends of a tick - planted, stepping, or a one-tick
+  step the renderer draws as a hop) and `debugViewRed` (share of leg-ticks with a red zone, a red
+  target, a foot in the air). Round 32 (flat walk / sprint / cross / stop-go / charge, dunes walk /
+  zigzag / stop-go / sprint): visible sliding on flat 2.9-13.5 -> 0 b/s, dunes 5-7.6 -> 0.5-1.1;
+  red legs flat walk 14% -> 7%, sprint unchanged ~21%. `client.html` reports the drawn `hop`.
 - Bedrock DEVIATES from Java on purpose, every one behind `body.javaWalk` (the identity tools set
   it): behaviour.js walkAt ramp + body.js overhang support (round 13, `javaSupport` for the
   second); engine/gait.js EMERGENCY STEP + engine/leg.js forced step at the reach limit (round 14,
@@ -83,6 +90,29 @@ browser pane so a change can be checked before the user tests it in game.
   step sounds), onlyone (a second replaces the first; a leftover from an old save is removed),
   lost (an unloaded spider is replaced near you at once, no cooldown), commands (/spider and
   /spiderconfig through the registered callbacks), groom (idle grooming + breathing).
+  Round 30 (v1.8.5 catch-up D) added: ward (Warding Idol: arming countdown, spacing refusal +
+  hand-back, no spawns while warded, the 1-block bite band and the fence, REPEL out of a zone,
+  the enraged boss shattering it, wardEnabled), laser (creative-only, LURE pulls it off a chase,
+  no bites meanwhile, a dot inside a ward stops at the fence), debug (`/spider debug`: ops only,
+  one box per Java part at the engine's own values across re-parks, Java's placements checked
+  directly, then a 60 fps replay of the REAL `debug.entity.json`/`debug.animation.json` - every
+  corner exact once the glide lands, motion glides, no Molang errors - giant and personal spiders,
+  orphan sweep, pack files agree with `debug.js`).
+  Round 33 (Java v1.8.6 mirrored) added: creative (creative/spectator players not hunted, bitten
+  or blinded, size still follows them, a tamed spider follows its creative owner but not a
+  spectator) and pet (the owner's creative punch -> FIGHT -> the mob dies; no orders in survival,
+  from another player, while ridden, against players or its own legs, or to an untamed spider; the
+  poison pet lunges); netherroof gained the spectator/creative rescue checks. The stub gained
+  `__test.punch(target, attacker)` (entityHitEntity) and vanilla mob health (pig, cow, zombie).
+  Round 31 (catch-up E) added: menu (the Spider Config Book's settings menu, `menu.js`: Java's 8
+  categories cover every setting once, first-join book once ever and only for editors, every page
+  and button, save/refuse/empty-box reset/reset page/untouched page, spawn timer re-arm, rounding,
+  Find a setting, Reset ALL with its confirm, `/spider menu` retried while the chat screen closes,
+  a guest's read-only view, giveConfigBook). Forms come from `simtest/mcuistub.js`, the stand-in for
+  `@minecraft/server-ui` (every test page's import map points there): the open form is
+  `ui.open`; answer it with `ui.click(i | "button text")`, `ui.submit({ "Label start": value })`,
+  `ui.close()`, then `await ui.settle()`; `ui.busy = N` makes the next N shows come back
+  UserBusy; misuse lands in `ui.errors`.
   2026-10-11 (round 17, camo): 82 passed, 0 failed. The stub (`mcstub.js`) now models: entity health + damage with
   the entityHurt before-event, deferred after-events (spawn/load/die/remove; a slain mob stays
   valid 20 ticks), system.run, rideable/riding, onfire, items, difficulty, input, game mode, and
@@ -94,6 +124,12 @@ browser pane so a change can be checked before the user tests it in game.
   behind; Java (`java=1`) 116/270, worst 1.53, 3.0 behind. chase.html also takes `?pattern=
   stopgo|zigzag`, `?floor=` (speed while a leg is strained), `?slide=` (0 = Java's foot slide on
   every size change), `?reach=` (emergency-step reach limit).
+- Round 32 deviations: `engine/gait.js STEP.stayLifted` (a stepping foot stays up until it lands
+  instead of chasing its moving look-ahead target along the ground; off under `javaWalk` and
+  `carefulGait`), `EMERGENCY.comfort = 0.7` (a strained leg may emergency-step at 70% of its
+  comfort zone, before it turns red), and render.js `stepHop` + the leg client's `v.hy`: a step the
+  engine begins and lands inside one tick is DRAWN as a hop (the engine's own path is untouched -
+  making such steps last two ticks flipped the tunnel scene from through to over the hill).
 - Round 15 deviations (all off under `javaWalk`): COMFORT.floor 0.9 (behaviour.js; Java 0.6 - only
   where emergency steps are on), RESCALE.slideFeetAbove 0.08 (body.js; feet stay put on small size
   changes), the leg.js forced step starts NEXT tick and does not ride along with the body that
@@ -106,14 +142,15 @@ browser pane so a change can be checked before the user tests it in game.
   straight walk and a 180-degree turn) through the real `platform.js` over fake raycasts with each
   Bedrock edge quirk; every mode must print `MATCHES JAVA`.
 
+- `version.sh` - prints the version, or stops if the two manifests disagree anywhere: header, every
+  module, the BP's dependency on the RP, and the `vX.Y.Z` in both pack NAMES (the name is the only
+  place the game's pack list shows which copy is which). `package.sh` and `deploy.sh` both run it.
 - `package.sh <output dir>` - builds the release `NetheriteOctoarachnopod-Bedrock-<version>.mcaddon`
-  (both packs; the version comes from the manifests, which must agree) and diffs the unpacked file
-  against the source. Bump the version in BOTH manifests - header, every module, and the BP's
-  dependency on the RP - before a release. v1.2.7 (2026-10-11) was the first public one.
-
-Deploy to the game (the user's packs are already applied to their test world by UUID; the test
-world's `world_behavior_packs.json` / `world_resource_packs.json` name the version, so update them
-when the manifest version changes):
-remove `%APPDATA%\Minecraft Bedrock\Users\Shared\games\com.mojang\development_behavior_packs\arachnomod_bp`
-and `...\development_resource_packs\arachnomod_rp`, then copy `behavior_pack` / `resource_pack` there
-under those names. The user must fully quit and relaunch Minecraft to pick changes up.
+  (both packs) and diffs the unpacked file against the source. v1.2.7 (2026-10-11) was the first
+  public one; it had no version in its pack names (added in 1.3.0).
+- `deploy.sh` - installs both packs as the game's DEVELOPMENT packs in versioned folders
+  (`development_behavior_packs\arachnomod_bp_v<version>`, `development_resource_packs\arachnomod_rp_v<version>`),
+  after removing every older `arachnomod_bp*` / `arachnomod_rp*` dev folder, then diffs the copies
+  against the source. Stops if the game is running. Fully quit Minecraft first and relaunch it
+  after. A world applies packs by UUID + version, so after a version bump re-add the pack to the
+  test world (or start a new one).

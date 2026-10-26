@@ -171,7 +171,19 @@ function walkLegsInUpdateOrder(spider) {
 // `forced` is the leg.js half: a foot that does reach its limit steps instead of sliding.
 // `reachable`: a step is only started toward a target within this fraction of the leg's reach (the
 // pull-back fires at 0.95; round 14 used 0.9, which left targets at 0.9-0.95 to Java's slide).
-export const EMERGENCY = { stretch: 0.85, uncomfortable: true, minPlantedFraction: 0.5, forced: true, ignoreCareful: false, reachable: 0.94 };
+// `comfort`: how far into its comfort zone a leg (outside its trigger zone) counts as strained - 1
+// = only once it is uncomfortable (red in /spider debug); round 32's 0.7 lets it step before it
+// gets there (chase.html, 8 scenarios: red legs 15.5% -> 13% of the time, flat walk 14% -> 6%).
+export const EMERGENCY = { stretch: 0.85, uncomfortable: true, comfort: 0.7, minPlantedFraction: 0.5, forced: true, ignoreCareful: false, reachable: 0.94 };
+
+// DELIBERATE DEVIATION FROM JAVA (round 32, Bedrock only; spider.javaWalk restores Java's step):
+// `stayLifted`. Java lowers a stepping foot once it is within legDropDistance of its target - but
+// the target is a look-ahead point re-scanned every tick, moving with the body, so the last ticks of
+// a step chase it ALONG THE GROUND: the foot skates (devtools/simtest/chase.html "skating"). Here
+// the foot stays up until the tick it actually lands. (The other skate - a step begun and finished
+// inside one tick - is left to the renderer: render.js stepHop. Making those steps last two ticks
+// in the engine flipped the AI's tunnel route from through to over the hill.)
+export const STEP = { stayLifted: true };
 
 /** Are the round-14 emergency steps on for this body? Off for javaWalk, and while the AI lines it
  *  up for a doorway/tunnel or squeezes it (body.carefulGait, set by ai.js): Java's routing there
@@ -187,7 +199,7 @@ function emergencyStep(leg) {
   // Over-stretched counts even inside the trigger zone: a foot left on a lower step is stretched
   // VERTICALLY as the body climbs, and the trigger zone (mostly horizontal) never asks it to move.
   const overStretched = reach > 0 && leg.endEffector.distance(leg.attachmentPosition) > reach * EMERGENCY.stretch;
-  const strained = overStretched || (EMERGENCY.uncomfortable && leg.isUncomfortable && leg.isOutsideTriggerZone);
+  const strained = overStretched || (EMERGENCY.uncomfortable && leg.isOutsideTriggerZone && leg.comfortUsed() > EMERGENCY.comfort);
   if (!strained) return false;
   if (leg.endEffector.distanceSquared(leg.target.position) < 0.01) return false;
   if (leg.target.position.distance(leg.attachmentPosition) >= reach * EMERGENCY.reachable) return false;   // a step it can't finish

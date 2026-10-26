@@ -1,8 +1,8 @@
 // Port of spider/SpiderBody.kt: gravity, drag, rotation, the support polygon and normal force,
 // the symmetric height correction, collision, size scaling, the per-tick leg update, and the
 // chase's tight-space machinery (THE SQUEEZE descent, doorway/corridor floor and lane pins, and
-// the body's own corridor detection). Not yet ported (later milestones): warding barriers, the
-// poison lunge and idle grooming (Java only grooms with wandering disabled).
+// the body's own corridor detection), idle grooming, the poison variant's lunge and the Warding
+// Idol's barriers.
 
 import { Vec3, Quat, UP, DOWN, FORWARD, lerp, toRadians } from "./vec.js";
 import { Leg } from "./leg.js";
@@ -10,6 +10,13 @@ import { LegLookUp } from "./gait.js";
 import { pointInPolygon, nearestPointInPolygon } from "./chain.js";
 
 const MAX_DESCENT_SPEED = 1.2;
+
+// The poison variant's tarantula strike (see beginLunge/updateLunge): telegraph ticks with the
+// front legs raised, then the forward-burst ticks that form the bite window, and the impulse
+// speed (blocks/tick at size 1, scaled by the spider's size).
+const LUNGE_REAR_TICKS = 8;
+const LUNGE_STRIKE_TICKS = 6;
+const LUNGE_SPEED = 0.9;
 
 // Round 15 knob (setSizeScale): size changes up to this fraction per tick leave planted feet put.
 export const RESCALE = { slideFeetAbove: 0.08 };
@@ -73,6 +80,16 @@ export class SpiderBody {
     this.groomingTimer = 0;           // 0 = not grooming, else ticks remaining
     this.groomingOriginalPos0 = new Vec3();
     this.groomingOriginalPos1 = new Vec3();
+
+    // Lunge state (the poison variant's tarantula strike, see updateLunge): 0 = idle, else ticks
+    // remaining across both phases (rear-up telegraph, then the forward strike burst).
+    this.lungeTimer = 0;
+    this.lungeDirection = new Vec3();
+
+    // WARDING IDOL fences ({ x, z, radius }): set each tick by SpiderAI for a wild spider and
+    // consumed (then cleared) by the physics step, so a ridden body is never fenced. One-way: a
+    // body ALREADY inside a circle is free to walk out (REPEL steers that); one outside can't get in.
+    this.barriers = [];
   }
 
   /** Ceiling height above the floor while the body is in a tight space, else null (SpiderMob caps the size with it). */
@@ -260,7 +277,9 @@ export class SpiderBody {
         // wall raise the preferred height, and lifting toward that would carry the body up into
         // the wall (a tunnel mouth turned into a climb over the hill). Java's zeroing never
         // lifted; this never lifts past standing either - it only stops the sag.
-        if (this.javaWalk || this.javaSupport) {
+        // One or two legs can't hold a body up at all: those keep Java's rule and DRAG it along
+        // the floor - the "1 leg crawls, 2 legs flail" netheriteLegs is meant to give.
+        if (this.javaWalk || this.javaSupport || this.legs.length < 3) {
           this.normalAcceleration.mul(0);
         } else {
           const standing = this.lerpedGait().bodyHeight;
@@ -286,11 +305,15 @@ export class SpiderBody {
     }
 
     // apply velocity
+    const beforeX = this.position.x;
+    const beforeZ = this.position.z;
     this.position.add(this.velocity);
 
     // Hold the centre line of a passage being threaded, and kill the lateral velocity pushing off it.
     if (this.activeLaneX !== null) { this.position.x += (this.activeLaneX - this.position.x) * 0.6; this.velocity.x *= 0.2; }
     if (this.activeLaneZ !== null) { this.position.z += (this.activeLaneZ - this.position.z) * 0.6; this.velocity.z *= 0.2; }
+
+    this.applyBarriers(beforeX, beforeZ);
 
     // resolve collision
     const heightPin = this.activePinY !== null ? this.activePinY : this.squeezeTargetY;
@@ -323,11 +346,107 @@ export class SpiderBody {
     for (const leg of updateOrder) leg.updateMemo();
     for (const leg of updateOrder) leg.update();
 
-    // Idle grooming overrides the front legs' pose, so it runs AFTER the leg updates.
+    // Idle grooming and the lunge both override the front legs' pose, so they must run AFTER the
+    // leg updates (they never overlap - beginLunge waits out a grooming).
     this.updateGrooming();
+    this.updateLunge();
     this.age++;
 
     this.updatePreferredAngles();
+  }
+
+  // ---- Warding idol barriers (Java v1.8.5) ----------------------------------------------------
+
+  /** A body that just crossed INTO a ward's circle is put back on its rim and the part of its
+   *  velocity driving inward is removed, so anything that would carry it in (a chase, a lunge,
+   *  plain momentum) slides it along the edge instead. Physics rather than AI on purpose: it holds
+   *  whatever the AI or a lunge asks for. A body that started the tick inside is left alone: it is
+   *  on its way out, and snapping it to the rim would be a teleport. */
+  applyBarriers(beforeX, beforeZ) {
+    const fence = this.barriers;
+    this.barriers = [];
+    for (const b of fence) {
+      const bx = beforeX - b.x;
+      const bz = beforeZ - b.z;
+      const before = Math.sqrt(bx * bx + bz * bz);
+      if (before < b.radius - 1e-3) continue;
+      const nx = this.position.x - b.x;
+      const nz = this.position.z - b.z;
+      const now = Math.sqrt(nx * nx + nz * nz);
+      if (now >= b.radius) continue;
+      const ux = now > 1e-6 ? nx / now : bx / before;
+      const uz = now > 1e-6 ? nz / now : bz / before;
+      this.position.x = b.x + ux * b.radius;
+      this.position.z = b.z + uz * b.radius;
+      const inward = this.velocity.x * ux + this.velocity.z * uz;
+      if (inward < 0) {
+        this.velocity.x -= inward * ux;
+        this.velocity.z -= inward * uz;
+      }
+    }
+  }
+
+  // ---- The lunge (the poison variant's tarantula strike, Java v1.3.0) ------------------------
+  // Real tarantulas rear up with their front legs raised, THEN strike. beginLunge starts the
+  // sequence: LUNGE_REAR_TICKS of telegraph (the front legs sweep up and forward while
+  // calcPreferredY lifts the body - the threat pose), then one hard velocity impulse hurls the
+  // body at the target for LUNGE_STRIKE_TICKS - the only window in which the mob lets the poison
+  // bite land. Same trick as grooming: front legs isDisabled + endEffector steering.
+
+  get isLunging() { return this.lungeTimer > 0; }
+
+  /** The forward-burst phase - the bite window. */
+  get isLungeStriking() { return this.lungeTimer >= 1 && this.lungeTimer <= LUNGE_STRIKE_TICKS; }
+
+  beginLunge(direction) {
+    if (this.lungeTimer > 0 || this.groomingTimer > 0) return;
+    if (this.legs.length < 2) return;
+    this.lungeDirection.set(direction.x, 0, direction.z);
+    if (this.lungeDirection.lengthSquared() < 1e-6) return;
+    this.lungeDirection.normalize();
+    this.lungeTimer = LUNGE_REAR_TICKS + LUNGE_STRIKE_TICKS;
+    this.legs[0].isDisabled = true;
+    this.legs[1].isDisabled = true;
+  }
+
+  /** End the sequence (bite landed, or it played out): give the front legs back to the gait,
+   *  which replants them with normal steps - no snap. */
+  endLunge() {
+    this.lungeTimer = 0;
+    if (this.legs[0]) this.legs[0].isDisabled = false;
+    if (this.legs[1]) this.legs[1].isDisabled = false;
+  }
+
+  updateLunge() {
+    if (this.lungeTimer <= 0) return;
+    const leg0 = this.legs[0], leg1 = this.legs[1];
+    if (!leg0 || !leg1) { this.endLunge(); return; }
+
+    // Telegraph over -> one hard impulse toward the target, with a slight hop so the strike
+    // leaves the ground. Ground drag bleeds it off across the strike window.
+    if (this.lungeTimer === LUNGE_STRIKE_TICKS + 1) {
+      const burst = LUNGE_SPEED * Math.max(0.6, Math.min(2.5, this.sizeScale));
+      this.velocity.add(this.lungeDirection.copy().mul(burst));
+      this.velocity.y += 0.3 * burst;
+    }
+
+    // The front legs are held up and forward of the body for the whole sequence - the threat
+    // pose - swept smoothly toward the raised target during the telegraph and riding along with
+    // the body through the strike. legs[0] = front-right, legs[1] = front-left.
+    const up = UP();
+    const right = this.lungeDirection.crossNew(up).normalize();
+    for (let i = 0; i <= 1; i++) {
+      const leg = i === 0 ? leg0 : leg1;
+      const sideDir = i === 0 ? 1 : -1;
+      const target = this.position.copy()
+        .add(this.lungeDirection.copy().mul(0.9 * this.sizeScale))
+        .add(up.copy().mul(0.8 * this.sizeScale))
+        .add(right.copy().mul(0.35 * sideDir * this.sizeScale));
+      leg.endEffector.lerp(target, 0.35);
+    }
+
+    this.lungeTimer--;
+    if (this.lungeTimer === 0) this.endLunge();
   }
 
   // ---- Idle grooming (Java v1.1.3, contributed by NetherySiloX) ----------------------------
@@ -451,6 +570,10 @@ export class SpiderBody {
       if (breathingFactor > 0) targetY += Math.sin(this.age * 0.07) * 0.08 * this.sizeScale * breathingFactor;
       if (this.groomingTimer > 0) targetY -= this.groomingSmoothT() * 0.15 * this.sizeScale;
     }
+
+    // Rear up while a lunge telegraphs: the body lifts as the front legs rise - the tarantula
+    // threat pose right before the strike (see updateLunge).
+    if (this.lungeTimer > LUNGE_STRIKE_TICKS) targetY += 0.22 * this.sizeScale;
 
     // Doorway/corridor: stand at the passage's own floor - at normal height, or as close under
     // the ceiling as this space allows, whichever is lower - never at the wall top the legs found.

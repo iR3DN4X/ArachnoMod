@@ -1,0 +1,22 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.arachno_debug.pose": {
+      "loop": true,
+      "bones": {
+        "root": { "rotation": [0, "180 - q.body_y_rotation", 0] },
+        "off": {
+          "position": [
+            "-16 * (q.property('arachno:x') + (v.o_x ?? 0))",
+            "16 * (q.property('arachno:y') + (v.o_y ?? 0))",
+            "16 * (q.property('arachno:z') + (v.o_z ?? 0))"
+          ]
+        },
+        "yaw": { "rotation": [0, "-q.property('arachno:a')", 0] },
+        "pitch": { "rotation": ["-q.property('arachno:p')", 0, 0] },
+        "roll": { "rotation": [0, 0, "q.property('arachno:r')"] },
+        "box": { "scale": ["q.property('arachno:sx')", "q.property('arachno:sy')", "q.property('arachno:sz')"] }
+      }
+    }
+  }
+}

@@ -33,6 +33,7 @@
         "arachno:x3": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
         "arachno:y3": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
         "arachno:z3": { "type": "float", "range": [-128.0, 128.0], "default": 0.0, "client_sync": true },
+        "arachno:hop": { "type": "float", "range": [0.0, 16.0], "default": 0.0, "client_sync": true },
         "arachno:tex": { "type": "int", "range": [0, 1023], "default": 0, "client_sync": true }
       }
     },

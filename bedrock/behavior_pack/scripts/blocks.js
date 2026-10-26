@@ -31,8 +31,10 @@ const NO_COLLISION = new Set([
 const NO_COLLISION_SUFFIX = /(_sapling|_button|_pressure_plate|_sign|_banner|_torch|_rail|_tulip|_coral|_coral_fan|_coral_wall_fan|_roots|_fungus|_vines|_vines_plant|_flower|_propagule|_petals)$/;
 const DOOR_LIKE = /(door|trapdoor|fence_gate)$/;
 const LEAVES = /leaves/;
-// Collides, but the top is not a full sturdy face.
-const PARTIAL = /(slab|stairs|fence|_wall|cobblestone_wall|pane|iron_bars|carpet|snow_layer|chain|lantern|candle|ladder|scaffolding|_bed|^bed|cake|cauldron|chest|enchanting_table|end_portal_frame|hopper|daylight_detector|stonecutter|bell|anvil|grindstone|lectern|campfire|conduit|skull|head|flower_pot|composter|sea_pickle|turtle_egg|sniffer_egg|amethyst_cluster|_bud|pointed_dripstone|big_dripleaf|small_dripleaf|azalea|mangrove_roots|lily_pad|waterlily|cocoa)/;
+// Collides, but the top is not a full sturdy face. (Anchored where a loose match would catch a full
+// block: "^bed" alone also matched BEDROCK, so the AI never counted bedrock as ground; "chain" caught
+// chain_command_block.)
+const PARTIAL = /(slab|stairs|fence|_wall|cobblestone_wall|pane|iron_bars|carpet|snow_layer|(^|_)chain$|lantern|candle|ladder|scaffolding|_bed$|^bed$|cake|cauldron|chest|enchanting_table|end_portal_frame|hopper|daylight_detector|stonecutter|bell|anvil|grindstone|lectern|campfire|conduit|skull|_head$|flower_pot|composter|sea_pickle|turtle_egg|sniffer_egg|amethyst_cluster|_bud|pointed_dripstone|big_dripleaf|small_dripleaf|azalea|mangrove_roots|lily_pad|waterlily|cocoa)/;
 
 /** Everything one block can tell the AI. Unloaded blocks come back { loaded: false }. */
 export class BlockInfo {

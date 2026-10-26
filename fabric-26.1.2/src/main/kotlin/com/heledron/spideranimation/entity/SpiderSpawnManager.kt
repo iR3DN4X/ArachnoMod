@@ -5,13 +5,18 @@ import com.heledron.spideranimation.SpiderAnimationMod
 import com.heledron.spideranimation.platform.DISPLAY_TAG
 import com.heledron.spideranimation.platform.DisplayTracker
 import com.heledron.spideranimation.platform.dimensionId
+import com.heledron.spideranimation.spider.SpiderBody
 import java.util.UUID
+import net.minecraft.core.BlockPos
 import net.minecraft.server.MinecraftServer
 import net.minecraft.world.entity.EntitySpawnReason
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.Difficulty
+import net.minecraft.world.level.Level
+import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.storage.LevelResource
+import org.joml.Vector3d
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.math.PI
@@ -109,6 +114,7 @@ object SpiderSpawnManager {
         pendingPeacefulExit = false
         abandonedTicks = 0
         strandedTicks = 0
+        netherTicks = 0
         janitorTimer = 0
         stateLoaded = false     // the next world loads its own kill record
         killCount = 0
@@ -349,6 +355,9 @@ object SpiderSpawnManager {
             }
             abandonedTicks = 0
 
+            // THE NETHER (only): see rescueInNether.
+            if (rescueInNether(cur)) return
+
             // STRANDED BUT STILL LOADED. Walking far away normally unloads the spider's chunk, and
             // the removal branch below already relocates it next to someone the moment that
             // happens — so the usual "I ran 1000 blocks, is it lost forever?" case was never a
@@ -422,6 +431,75 @@ object SpiderSpawnManager {
 
         if (spawnNear(server, players.random())) respawnTimer = -1
         else arm(RETRY_TICKS, ScheduleKind.RETRY)
+    }
+
+    // ---- The Nether rescue (v1.8.6, from the Bedrock edition) ---------------------------------
+    // Its walls and its bedrock ceiling are where the spider gets lost: Java's ray-start rule lifts
+    // a body pushed into a block out on top, so a chase up a wall can leave it standing ON the
+    // roof (or wedged in the bedrock) with everyone below - or it just ends up out of range. There
+    // it TELEPORTS to the nearest player: the very same spider - variant, health, rage, taming -
+    // never a kill and never a fresh roll. Falling out of the BOTTOM of the world is left alone:
+    // that is how you kill it. Nobody in spectator counts, nor anyone sheltering in a ward's zone.
+
+    private const val NETHER_GRACE_TICKS = 20          // a second stuck or out of range first
+    private val LANDING_DISTANCES = doubleArrayOf(4.0, 3.0, 5.0, 6.0, 2.0)
+    private const val LANDING_ANGLES = 16
+    private const val LANDING_MAX_RISE = 3.0           // never land up in the roof band above you
+    private const val NETHER_ROOF_FLOOR = 126.0        // standing at or above this = on the roof
+    private const val NETHER_CEILING_BAND = 118.0      // a body this high may be wedged in the bedrock
+    private var netherTicks = 0
+
+    /** True while the Nether rescue owns this tick (counting down, or just teleported it). */
+    private fun rescueInNether(cur: SpiderMob): Boolean {
+        val level = cur.level() as ServerLevel
+        val body = cur.simulatedBody
+        if (level.dimension() != Level.NETHER || body == null) { netherTicks = 0; return false }
+        val company = level.players().filter { !it.isSpectator && !WardRegistry.isProtected(level, it.x, it.z) }
+        val p = body.position
+        val fallingOut = p.y < level.minY + 2
+        val limit = Config.CHASE_DISTANCE.get() * Config.CHASE_EXIT_MULTIPLIER.get()
+        val outOfRange = company.all { it.distanceToSqr(p.x, p.y, p.z) > limit * limit }
+        if (company.isEmpty() || fallingOut || !(outOfRange || stuckInNetherRoof(level, body, company))) {
+            netherTicks = 0
+            return false
+        }
+        if (++netherTicks < NETHER_GRACE_TICKS) return true
+        netherTicks = 0
+        // Off the roof, if anyone is: the nearest of them.
+        val pool = company.filter { it.y < NETHER_ROOF_FLOOR }.ifEmpty { company }
+        val target = pool.minBy { it.distanceToSqr(p.x, p.y, p.z) }
+        val feet = landingNear(level, target)
+        cur.rescueTo(feet.x, feet.y, feet.z)
+        return true
+    }
+
+    /** Pushed up through the bedrock ceiling - standing on the roof, or wedged in the bedrock band -
+     *  while everyone is down below? (Someone up there with it: leave it.) */
+    private fun stuckInNetherRoof(level: ServerLevel, body: SpiderBody, company: List<ServerPlayer>): Boolean {
+        if (company.none { it.y < NETHER_ROOF_FLOOR }) return false
+        if (company.any { it.y >= NETHER_ROOF_FLOOR }) return false
+        val ground = body.position.y - body.walkGait.stationary.bodyHeight
+        if (ground >= NETHER_ROOF_FLOOR) return true
+        if (body.position.y < NETHER_CEILING_BAND) return false
+        return level.getBlockState(BlockPos.containing(body.position.x, body.position.y, body.position.z)).`is`(Blocks.BEDROCK)
+    }
+
+    /** Safe ground a few blocks from the player (never inside a ward, never up above them in the
+     *  roof band), else their own feet. */
+    private fun landingNear(level: ServerLevel, player: ServerPlayer): Vector3d {
+        for (distance in LANDING_DISTANCES) {
+            val phase = Random.nextDouble() * 2.0 * PI
+            for (i in 0 until LANDING_ANGLES) {
+                val angle = phase + (2.0 * PI / LANDING_ANGLES) * i
+                val x = player.x + cos(angle) * distance
+                val z = player.z + sin(angle) * distance
+                if (WardRegistry.isProtected(level, x, z)) continue
+                val y = SafeGroundFinder.groundYAt(level, x, z, refY = player.y) ?: continue
+                if (y > player.y + LANDING_MAX_RISE) continue
+                return Vector3d(x, y, z)
+            }
+        }
+        return Vector3d(player.x, player.y, player.z)
     }
 
     private fun relocateNear(server: MinecraftServer, lastSpider: SpiderMob) {

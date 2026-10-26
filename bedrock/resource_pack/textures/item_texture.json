@@ -2,6 +2,9 @@
   "resource_pack_name": "arachnomod",
   "texture_name": "atlas.items",
   "texture_data": {
-    "arachno_spider_tamer": { "textures": "textures/items/spider_tamer" }
+    "arachno_spider_tamer": { "textures": "textures/items/spider_tamer" },
+    "arachno_spider_spawn_egg": { "textures": "textures/items/spider_spawn_egg" },
+    "arachno_spider_laser_pointer": { "textures": "textures/items/spider_laser_pointer" },
+    "arachno_spider_config_book": { "textures": "textures/items/spider_config_book" }
   }
 }

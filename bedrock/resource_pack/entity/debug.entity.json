@@ -1,0 +1,74 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "arachno:debug",
+      "materials": { "default": "entity_alphatest", "blend": "entity_alphablend" },
+      "textures": {
+        "default": "textures/blocks/gold_block",
+        "d0": "textures/blocks/gold_block",
+        "d1": "textures/blocks/iron_block",
+        "d2": "textures/blocks/diamond_block",
+        "d3": "textures/blocks/lapis_block",
+        "d4": "textures/blocks/redstone_block",
+        "d5": "textures/blocks/emerald_block",
+        "d6": "textures/blocks/concrete_black",
+        "d7": "textures/blocks/concrete_white",
+        "d8": "textures/blocks/glass_cyan",
+        "d9": "textures/blocks/glass_red",
+        "d10": "textures/blocks/glass_lime"
+      },
+      "geometry": { "default": "geometry.arachno_debug" },
+      "animations": { "pose": "animation.arachno_debug.pose" },
+      "scripts": {
+        "initialize": [
+          "v.al = 0;",
+          "v.chg = 0;",
+          "v.d_x = 0;",
+          "v.d_y = 0;",
+          "v.d_z = 0;",
+          "v.dt = 0;",
+          "v.l_x = 0;",
+          "v.l_y = 0;",
+          "v.l_z = 0;",
+          "v.o_x = 0;",
+          "v.o_y = 0;",
+          "v.o_z = 0;",
+          "v.ready = 0;",
+          "v.s_x = 0;",
+          "v.s_y = 0;",
+          "v.s_z = 0;",
+          "v.since = 0;",
+          "v.snap = 0;",
+          "v.t = 0;",
+          "v.ui = 0.05;"
+        ],
+        "pre_animation": [
+          "v.dt = (q.delta_time > 0) ? q.delta_time : 0.05;",
+          "v.since = v.since + v.dt;",
+          "v.snap = q.property('arachno:snap') ? 1 : (v.ready ? 0 : 1);",
+          "v.d_x = q.property('arachno:x') - v.l_x;",
+          "v.d_y = q.property('arachno:y') - v.l_y;",
+          "v.d_z = q.property('arachno:z') - v.l_z;",
+          "v.chg = (math.abs(v.d_x) + math.abs(v.d_y) + math.abs(v.d_z) > 0.00001) ? 1 : 0;",
+          "v.s_x = v.snap ? 0 : (v.chg ? v.o_x - v.d_x : v.s_x);",
+          "v.s_y = v.snap ? 0 : (v.chg ? v.o_y - v.d_y : v.s_y);",
+          "v.s_z = v.snap ? 0 : (v.chg ? v.o_z - v.d_z : v.s_z);",
+          "v.ui = (v.chg && v.since < 0.15) ? v.ui * 0.5 + math.clamp(v.since, 0.03, 0.15) * 0.5 : v.ui;",
+          "v.since = v.chg ? 0 : v.since;",
+          "v.t = v.chg ? v.dt : v.t + v.dt;",
+          "v.al = math.clamp(v.t / math.clamp(v.ui, 0.03, 0.15), 0, 1);",
+          "v.o_x = v.s_x * (1 - v.al);",
+          "v.l_x = q.property('arachno:x');",
+          "v.o_y = v.s_y * (1 - v.al);",
+          "v.l_y = q.property('arachno:y');",
+          "v.o_z = v.s_z * (1 - v.al);",
+          "v.l_z = q.property('arachno:z');",
+          "v.ready = (q.property('arachno:sx') > 0) ? 1 : 0;"
+        ],
+        "animate": ["pose"]
+      },
+      "render_controllers": ["controller.render.arachno_debug_bright", "controller.render.arachno_debug_lit"]
+    }
+  }
+}

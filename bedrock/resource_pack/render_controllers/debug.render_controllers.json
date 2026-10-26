@@ -1,0 +1,30 @@
+{
+  "format_version": "1.10.0",
+  "render_controllers": {
+    "controller.render.arachno_debug_bright": {
+      "arrays": {
+        "textures": {
+          "Array.skins": ["Texture.d0", "Texture.d1", "Texture.d2", "Texture.d3", "Texture.d4", "Texture.d5", "Texture.d6", "Texture.d7", "Texture.d8", "Texture.d9", "Texture.d10"]
+        },
+        "materials": { "Array.mats": ["Material.default", "Material.blend"] }
+      },
+      "geometry": "Geometry.default",
+      "part_visibility": [{ "*": "q.property('arachno:bright')" }],
+      "materials": [{ "*": "Array.mats[q.property('arachno:tex') >= 8]" }],
+      "textures": ["Array.skins[q.property('arachno:tex')]"],
+      "ignore_lighting": true
+    },
+    "controller.render.arachno_debug_lit": {
+      "arrays": {
+        "textures": {
+          "Array.skins": ["Texture.d0", "Texture.d1", "Texture.d2", "Texture.d3", "Texture.d4", "Texture.d5", "Texture.d6", "Texture.d7", "Texture.d8", "Texture.d9", "Texture.d10"]
+        },
+        "materials": { "Array.mats": ["Material.default", "Material.blend"] }
+      },
+      "geometry": "Geometry.default",
+      "part_visibility": [{ "*": "!q.property('arachno:bright')" }],
+      "materials": [{ "*": "Array.mats[q.property('arachno:tex') >= 8]" }],
+      "textures": ["Array.skins[q.property('arachno:tex')]"]
+    }
+  }
+}

@@ -19,8 +19,9 @@ once you finally kill it. **Seven advancements** track the hunt. Every number is
 spider's armour and its leg count (1–16, default 8).
 
 **Bedrock Edition:** the spider is also a Bedrock add-on (Minecraft Bedrock 26.40+, no experiments),
-in [`bedrock/`](bedrock/). Bedrock v1.2.7 matches the Java mod's v1.2.7: the netherite and camo
-variants, taming and riding, and `/spider` + `/spiderconfig`.
+in [`bedrock/`](bedrock/). Bedrock v1.8.6 matches the Java mod's v1.8.6: all four variants, the
+enraged boss, the Warding Idol, the laser pointer, the config book and the debug view. Only the
+advancements can't come across, because Bedrock add-ons can't add them.
 
 > ⚠️ **Arachnophobia warning** — the movement is realistic on purpose. See the CurseForge page.
 
@@ -41,7 +42,7 @@ Kotlin engine sources, plus the Bedrock add-on.
 | [`neoforge-1.21.1/`](neoforge-1.21.1/) | NeoForge | 1.21.1 | 21 | ModDevGradle |
 | [`forge-1.20.1/`](forge-1.20.1/) | Forge (loads on NeoForge 1.20.1 too) | 1.20.1 | 17 | ForgeGradle 6, official mappings |
 | [`fabric-1.20.1/`](fabric-1.20.1/) | Fabric | 1.20.1 | 17 | Fabric Loom, Mojang mappings |
-| [`bedrock/`](bedrock/) | Bedrock add-on (behavior + resource pack) | Bedrock 26.40+ | — | Script API `@minecraft/server` 2.9.0 (JavaScript); nothing to compile |
+| [`bedrock/`](bedrock/) | Bedrock add-on (behavior + resource pack) | Bedrock 26.40+ | — | Script API `@minecraft/server` 2.9.0 + `@minecraft/server-ui` 2.1.0 (JavaScript); nothing to compile |
 
 **On the 26.x builds:** Minecraft 26.1 is the first *unobfuscated* release, so those two projects carry no mappings declaration at all, use the `net.fabricmc.fabric-loom` / ModDevGradle plugins without remapping, and require **Java 25 — including for the Gradle JVM itself**. There is no Forge build for 26.x: MinecraftForge 26.1.2 exists, but Kotlin for Forge, which this mod needs, does not support it; Quilt needs no separate build because Quilt Loader runs the Fabric jar (Quilt's own standard libraries were discontinued in December 2025).
 
@@ -82,7 +83,7 @@ This code is published for transparency, learning, and add-on development. It re
 **source-available custom license**: free to play, free to read — but **no commercial reuse, no
 ports/re-releases, and no rehosting of the mod files**. Add-on mods, resource/language packs,
 modpacks (with acknowledgment), and monetized videos are all welcome. Read
-[`LICENSE.md`](LICENSE.md) for the exact terms before reusing anything.
+[`THENETHERITEOCTOARACHNOPODMODNETHERITESPIDERLICENSE.md`](THENETHERITEOCTOARACHNOPODMODNETHERITESPIDERLICENSE.md) for the exact terms before reusing anything.
 
 ## Credits
 

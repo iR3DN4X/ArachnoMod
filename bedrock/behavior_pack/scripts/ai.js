@@ -2,9 +2,19 @@
 // state machine and the chase's route planning - steering round walls, hunting for the door,
 // threading doorways and corridors squarely, and THE SQUEEZE after a dug-in player.
 //
-// Not yet ported (they arrive with their features): LURE (laser pointer), REPEL and the ward
-// fence (Warding Idol), the hunter's stalk, and the enraged boss. Their hooks are the same as in
-// Java, so they slot in without reshaping this file.
+// Also THE HUNTER'S STALK (Java v1.4.0): it only moves while nobody is looking at it.
+//
+// And the ENRAGED boss's speed (Java v1.5.0), and Java v1.8.5's two newest modes:
+//   LURE  - the laser pointer's dot: it scurries after it, outranking a chase (and it can't bite).
+//   REPEL - inside a Warding Idol's zone with nobody it may reach: run straight out, away from the
+//           idol. Outranks everything, even the laser. Idols also fence the body out (SpiderBody's
+//           barriers) and hide every player more than a block inside. The ENRAGED boss ignores all
+//           of it - and blows idols apart.
+// And Java v1.8.6's:
+//   FIGHT - a TAMED spider whose owner, in creative, just punched a mob goes for it (the bite is
+//           the controller's) until it dies or gets away. Only REPEL and the laser outrank it.
+//   Who it notices (enums.js notices): never a spectator, and a creative player only while it is
+//   tamed - a wild one ignores you in creative and wanders, like vanilla mobs.
 //
 // One SpiderAI per spider (Java keeps a side table keyed by entity; same state, same names).
 
@@ -12,8 +22,31 @@ import { Vec3 } from "./engine/vec.js";
 import { StayStillBehaviour, TargetBehaviour, DirectionBehaviour } from "./engine/behaviour.js";
 import { groundYAt, roomAt, openingHeight, collectOpenings, passageExtent, Opening, walledIn } from "./ground.js";
 import { CONFIG, scaleToSpeedFactor } from "./mob.js";
+import { zonesNear, isSafe, isProtected, shatterNear, BITE_BAND, ENRAGED_SHATTER_RANGE } from "./wards.js";
+import { notices } from "./enums.js";
 
-export const SpiderMode = { WANDER: "WANDER", ALERT: "ALERT", CHASE: "CHASE" };
+/** Is `entity` still worth fighting: there, alive, and in this dimension? */
+export function fightable(entity, dimensionId) {
+  try {
+    if (!entity || !(typeof entity.isValid === "function" ? entity.isValid() : entity.isValid)) return false;
+    if (entity.dimension.id !== dimensionId) return false;
+    const health = entity.getComponent("minecraft:health");
+    return !!health && health.currentValue > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+export const SpiderMode = { WANDER: "WANDER", ALERT: "ALERT", CHASE: "CHASE", LURE: "LURE", REPEL: "REPEL", FIGHT: "FIGHT" };
+
+// WARDING IDOLS: how far beyond a zone's edge the fence is already handed to the body (so a fast
+// spider - or a lunge - can never cover the gap between two AI ticks), how far past the bite band
+// it may be found before it counts as caught INSIDE, how far past the edge it runs when repelled,
+// and how long it may go without gaining a block on the way out before it is judged stuck.
+const WARD_FENCE_MARGIN = 16.0;
+const REPEL_SLACK = 0.25;
+const REPEL_CLEARANCE = 3.0;
+const REPEL_STALL_TICKS = 200;
 
 // ---- chase pathfinding constants (exactly Java's) ---------------------------------------------
 const STEER_ANGLES = [0.611, 1.222, 1.833];   // ~35/70/105 degrees off the direct line
@@ -27,6 +60,11 @@ const OPENING_RESCAN_TICKS = 20;
 const OPENING_SHRINK_RANGE = 7.0;
 const OPENING_STAGE_DIST = 1.6;
 const OPENING_PIN_RANGE = 4.5;
+
+// THE HUNTER (Java v1.4.0): inside this range watching it no longer helps; a view within ~45
+// degrees of it counts as watching.
+const HUNTER_COMMIT_RANGE = 6.0;
+const HUNTER_SEEN_DOT = 0.7;
 
 const clampTo = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -55,7 +93,40 @@ export class SpiderAI {
     this.waypointArrive = 1.0;
     // The behaviour to apply next tick (Java's entity.replaceComponent<SpiderBehaviour>).
     this.behaviour = new StayStillBehaviour();
+    // Every player in the spider's dimension this tick (the hunter asks whether ANYONE watches).
+    this.players = [];
+    // THE LASER POINTER's dot, and how many ticks are left on it.
+    this.lurePoint = new Vec3();
+    this.lureTimer = 0;
+    // REPEL: the furthest from the idol it has got so far, and how long since that last grew.
+    this.repelBest = 0;
+    this.repelStall = 0;
+    // Set by the controller every tick (Java v1.8.6): is it tamed (a pet follows creative players
+    // too), and the mob its owner last punched in creative (FIGHT), while still worth going after.
+    this.tamed = false;
+    this.fightTarget = null;
   }
+
+  get dimensionId() { return this.world.dimension.id; }
+
+  /** The controller, every tick: whether it is tamed, and what (if anything) it should fight. */
+  setPet(tamed, fightTarget) {
+    this.tamed = tamed;
+    this.fightTarget = fightTarget;
+  }
+
+  /** True while a tamed spider is going after the mob its owner punched (the controller bites). */
+  isFighting() { return this.mode === SpiderMode.FIGHT; }
+
+  /** Shine the laser pointer's dot at `point` for `ticks` ticks. */
+  lure(point, ticks) {
+    this.lurePoint = Vec3.of(point);
+    this.lureTimer = ticks;
+  }
+
+  /** Stuck inside a ward's zone a while, unable to run out (walled in, say): the spawn manager
+   *  moves it along, alive. */
+  repelStalled() { return this.mode === SpiderMode.REPEL && this.repelStall >= REPEL_STALL_TICKS; }
 
   isChasing() { return this.mode === SpiderMode.CHASE; }
   isSqueezing() { return this.squeezing; }
@@ -73,9 +144,80 @@ export class SpiderAI {
     body.passageFloorY = null;
     body.passageLaneX = null;
     body.passageLaneZ = null;
+    this.players = players;
+    body.carefulGait = false;   // re-derived at the end of a normal tick (lure and repel return early)
+    const dim = this.dimensionId;
 
+    // THE ENRAGED BOSS is immune to warding idols - no fence, no REPEL, nobody hidden from it - and
+    // blows apart any idol it gets near, measured from its FEET (a giant's body rides far above).
+    if (body.enraged) {
+      shatterNear(this.world.dimension, body.position.x, body.position.y - body.walkGait.stationary.bodyHeight,
+        body.position.z, ENRAGED_SHATTER_RANGE);
+      if (this.mode === SpiderMode.REPEL) this.enterWander();
+    }
+
+    // WARDING IDOLS: fence the body out of every armed zone nearby (SpiderBody holds it at most
+    // BITE_BAND past the edge, whatever the steering asks), and find out whether it stands in one.
+    const zones = body.enraged ? [] : zonesNear(dim, body.position.x, body.position.z, WARD_FENCE_MARGIN);
+    body.barriers = zones.map((z) => ({ x: z.x, z: z.z, radius: z.radius - BITE_BAND }));
+    let zone = null;
+    for (const z of zones) {
+      const d = z.distance(body.position.x, body.position.z);
+      if (d < z.radius && (!zone || d - z.radius < zone.distance(body.position.x, body.position.z) - zone.radius)) zone = z;
+    }
+
+    // REPEL outranks everything, the laser included: a spider inside a zone runs for the edge. The
+    // fence keeps it from ever getting deeper than the bite band on its own, so landing here means
+    // it was already inside - the idol armed around it, or it was summoned there.
+    if (this.mode === SpiderMode.REPEL) {
+      if (zone) {
+        this.tickRepel(zone);
+        return;
+      }
+      this.enterWander();   // out: carry on below as a wanderer
+    } else if (zone && zone.radius - zone.distance(body.position.x, body.position.z) > BITE_BAND + REPEL_SLACK) {
+      this.enterRepel(zone);
+      this.tickRepel(zone);
+      return;
+    }
+
+    // THE LASER POINTER outranks everything else, a chase included - shine the dot and the spider
+    // breaks off and goes for it. LURE is not CHASE, so its bite stays holstered meanwhile.
+    if (this.lureTimer > 0) {
+      this.lureTimer--;
+      if (this.mode !== SpiderMode.LURE) {
+        this.mode = SpiderMode.LURE;
+        this.modeTimer = 0;
+      }
+      this.tickLure();
+      return;
+    }
+    if (this.mode === SpiderMode.LURE) this.enterWander();   // the dot just went out
+
+    // A TAMED spider whose owner punched a mob in creative goes for it (Java v1.8.6; the controller
+    // decides what counts and lands the bite). Only the ward and the laser outrank it.
+    const target = this.fightTarget;
+    if (target && fightable(target, dim) &&
+        body.position.distanceSquared(target.location) <= (chaseRadius * CONFIG.chaseExitDistanceMultiplier) ** 2) {
+      if (this.mode !== SpiderMode.FIGHT) {
+        this.mode = SpiderMode.FIGHT;
+        this.modeTimer = 0;
+        this.squeezing = false;
+        this.passageClearance = 0;
+        this.clearOpening();
+      }
+      this.tickFight(target);
+      return;
+    }
+    if (this.mode === SpiderMode.FIGHT) this.enterWander();   // it died, or got away
+
+    // A player more than the bite band inside a ward is out of reach: it doesn't see them at all.
+    // Nobody in spectator, and nobody in creative unless it is tamed (enums.js notices).
+    // The enraged boss sees everyone.
     let nearestPlayer = null, bestSq = Infinity;
     for (const p of players) {
+      if (!notices(p, this.tamed)) continue;
+      if (!body.enraged && isSafe(dim, p.location.x, p.location.z)) continue;
       const d = body.position.distanceSquared(p.location);
       if (d < bestSq) { bestSq = d; nearestPlayer = p; }
     }
@@ -90,13 +232,13 @@ export class SpiderAI {
           this.enterAlert();
           this.tickAlert(nearestPlayer);
         } else {
-          this.tickWander();
+          this.wanderOrRepel(zone);
         }
         break;
       case SpiderMode.ALERT:
         if (!nearestPlayer || distanceToPlayer > exitRadius) {
           this.enterWander();
-          this.tickWander();
+          this.wanderOrRepel(zone);
         } else {
           this.tickAlert(nearestPlayer);
         }
@@ -104,7 +246,7 @@ export class SpiderAI {
       case SpiderMode.CHASE:
         if (!nearestPlayer || distanceToPlayer > exitRadius) {
           this.enterWander();
-          this.tickWander();
+          this.wanderOrRepel(zone);
         } else {
           this.tickChase(nearestPlayer);
         }
@@ -115,6 +257,109 @@ export class SpiderAI {
     // Java's exact gait while lining up for an opening or squeezing.
     body.carefulGait = this.passageClearance > 0 || this.squeezing || body.passageFloorY !== null ||
       body.passageLaneX !== null || body.passageLaneZ !== null;
+  }
+
+  // ---------------------------------------------------------------- warding idols + the laser
+
+  /** Nobody to hunt: wander - unless it stands in a ward's zone, in which case it backs out first
+   *  (a chase that ended at the edge because its quarry ran inside, say). */
+  wanderOrRepel(zone) {
+    if (!zone) { this.tickWander(); return; }
+    this.enterRepel(zone);
+    this.tickRepel(zone);
+  }
+
+  enterRepel(zone) {
+    this.mode = SpiderMode.REPEL;
+    this.modeTimer = 0;
+    this.squeezing = false;
+    this.passageClearance = 0;
+    this.clearOpening();
+    this.repelBest = zone.distance(this.body.position.x, this.body.position.z);
+    this.repelStall = 0;
+  }
+
+  /** Run straight away from the idol - the opposite direction to it - until clear of the edge. */
+  tickRepel(zone) {
+    const body = this.body;
+    this.squeezing = false;
+    this.passageClearance = 0;
+    body.setSpeedScale(chaseSpeedFactor(body));   // it RUNS
+    const dist = zone.distance(body.position.x, body.position.z);
+    let ux = body.position.x - zone.x;
+    let uz = body.position.z - zone.z;
+    if (dist < 1e-3) {
+      // Standing on the idol itself: any way out is the shortest way out.
+      const facing = body.forwardDirection();
+      ux = facing.x;
+      uz = facing.z;
+    }
+    const len = Math.max(Math.sqrt(ux * ux + uz * uz), 1e-6);
+    const out = zone.radius - dist + REPEL_CLEARANCE;
+    const x = body.position.x + ux / len * out;
+    const z = body.position.z + uz / len * out;
+    const y = groundYAt(this.world, x, z, body.position.y) ?? body.position.y;
+    this.behaviour = new TargetBehaviour(new Vec3(x, y, z), 0.5);
+    if (dist > this.repelBest + 1.0) {
+      this.repelBest = dist;
+      this.repelStall = 0;
+    } else {
+      this.repelStall++;
+    }
+  }
+
+  /** Scurry to the dot, and keep drawing it so the pointer is visible while it lasts. */
+  /** Go for the mob the owner punched, at chase speed, stopping inside bite reach like a chase
+   *  does. Straight at it: a mob is rarely holed up behind walls the way a player is. */
+  tickFight(target) {
+    const body = this.body;
+    body.setSpeedScale(chaseSpeedFactor(body));
+    const arrive = Math.min(body.walkGait.stationary.bodyHeight * 2, 4);
+    this.behaviour = new TargetBehaviour(this.fenced(Vec3.of(target.location)), arrive);
+  }
+
+  tickLure() {
+    const body = this.body, p = this.lurePoint;
+    body.setSpeedScale(chaseSpeedFactor(body));
+    // A dot inside a ward's zone draws it only as far as the fence.
+    this.behaviour = new TargetBehaviour(this.fenced(p), 0.75);
+    body.level.spawnParticle("minecraft:basic_flame_particle", new Vec3(p.x, p.y + 0.1, p.z));
+  }
+
+  /** Where to steer for `target` without asking the body to go deeper into a ward than it may: a
+   *  point past the fence is pulled back out onto it, radially (the barrier would hold it there
+   *  anyway - this just stops it straining at the line toward something it can never reach). */
+  fenced(target) {
+    const body = this.body;
+    if (body.enraged) return target;   // the boss goes wherever it likes
+    let x = target.x, z = target.z, moved = false;
+    for (const zone of zonesNear(this.dimensionId, x, z, 0)) {
+      const fence = zone.radius - BITE_BAND;
+      const dist = zone.distance(x, z);
+      if (dist >= fence) continue;
+      const ux = dist > 1e-6 ? (x - zone.x) / dist : 1;
+      const uz = dist > 1e-6 ? (z - zone.z) / dist : 0;
+      x = zone.x + ux * fence;
+      z = zone.z + uz * fence;
+      moved = true;
+    }
+    if (!moved) return target;
+    // The passage pins belong to the doorway it was threading; they don't apply on the fence.
+    body.passageFloorY = null;
+    body.passageLaneX = null;
+    body.passageLaneZ = null;
+    return new Vec3(x, groundYAt(this.world, x, z, target.y) ?? target.y, z);
+  }
+
+  /** Does the straight walk from `from` to `to` cut into any armed ward's zone? */
+  crossesWard(from, to) {
+    const dx = to.x - from.x, dz = to.z - from.z;
+    const lenSq = dx * dx + dz * dz;
+    for (const zone of zonesNear(this.dimensionId, from.x, from.z, Math.sqrt(lenSq) + 1)) {
+      const t = lenSq < 1e-9 ? 0 : clampTo(((zone.x - from.x) * dx + (zone.z - from.z) * dz) / lenSq, 0, 1);
+      if (zone.distance(from.x + dx * t, from.z + dz * t) < zone.radius) return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------- mode transitions
@@ -183,8 +428,14 @@ export class SpiderAI {
 
   tickChase(player) {
     const body = this.body;
+    // THE HUNTER doesn't charge - it stalks. Entirely different close-in rules: see tickStalk.
+    if (body.variantKey === "hunter") {
+      this.tickStalk(player);
+      return;
+    }
     const p = player.location;
-    body.setSpeedScale(chaseSpeedFactor(body));
+    const rageBoost = body.enraged ? CONFIG.enragedSpeedMultiplier : 1.0;
+    body.setSpeedScale(chaseSpeedFactor(body) * rageBoost);
     // Stop distance CLAMPED; DUG-IN PRESSURE when the player is vertically out of reach.
     const groundLevelY = body.position.y - body.walkGait.stationary.bodyHeight;
     const verticalGap = Math.abs(groundLevelY - p.y);
@@ -217,7 +468,57 @@ export class SpiderAI {
         arrive = this.waypointArrive;
       }
     }
-    this.behaviour = new TargetBehaviour(targetPos, arrive);
+    this.behaviour = new TargetBehaviour(this.fenced(targetPos), arrive);
+  }
+
+  // ---------------------------------------------------------------- the hunter's stalk
+
+  // How the HUNTER hunts: it closes in ONLY while nobody is looking at it, and freezes dead still -
+  // mid-stride - the moment a view swings toward it. Inside commit range your eyes stop helping:
+  // it takes you anyway. And if you're vertically out of its reach (a hole, a pillar), it doesn't
+  // press or squeeze like the others - it CAMPS, motionless, just outside.
+  tickStalk(player) {
+    const body = this.body;
+    const p = player.location;
+    // The hunter never squeezes and never shrinks: clear anything the shared machinery set.
+    this.squeezing = false;
+    this.passageClearance = 0;
+    body.squeezeTargetY = null;
+
+    const dx = p.x - body.position.x;
+    const dz = p.z - body.position.z;
+    const horizontal = Math.sqrt(dx * dx + dz * dz);
+    const groundLevelY = body.position.y - body.walkGait.stationary.bodyHeight;
+    const verticalGap = Math.abs(groundLevelY - p.y);
+
+    // Player dug in / pillared up nearby: CAMP. Dead still, right outside the hideout.
+    if (verticalGap > 2.0 && horizontal < 8.0) {
+      this.behaviour = new StayStillBehaviour();
+      return;
+    }
+
+    // Watched from outside commit range: freeze. Not a step, not a sway.
+    const anyoneWatching = this.players.some((other) => notices(other, this.tamed) && isLookingAt(other, body));
+    if (anyoneWatching && horizontal > HUNTER_COMMIT_RANGE) {
+      this.behaviour = new StayStillBehaviour();
+      return;
+    }
+
+    // Unseen (or committed): close in, fast and silent, with the same route planning as the
+    // normal chase - but crawl-holes count as walls (it never shrinks; doorways fit as-is).
+    body.setSpeedScale(CONFIG.hunterSpeedMultiplier);
+    let targetPos = Vec3.of(p);
+    let arrive = Math.min(body.walkGait.stationary.bodyHeight * 2.0, 4.0);
+    if (CONFIG.chasePathfinding) {
+      this.waypointArrive = 1.0;
+      const waypoint = this.planChaseMove(player, 2);
+      if (waypoint) {
+        targetPos = waypoint;
+        arrive = this.waypointArrive;
+      }
+    }
+    this.passageClearance = 0;   // fixed size: openings are walked through, never shrunk for
+    this.behaviour = new TargetBehaviour(this.fenced(targetPos), arrive);
   }
 
   // ---------------------------------------------------------------- chase pathfinding
@@ -385,9 +686,13 @@ export class SpiderAI {
       const dist = Math.random() * radius;
       const x = anchor.x + Math.cos(angle) * dist;
       const z = anchor.z + Math.sin(angle) * dist;
+      // Warding idols are no-go ground: a patrol never picks a spot inside one, nor a route that
+      // cuts across the edge of one on the way. (Not the enraged boss.)
+      if (!body.enraged && isProtected(this.dimensionId, x, z)) continue;
       const safeY = groundYAt(world, x, z, anchor.y);
       if (safeY === null) continue;
       const target = new Vec3(x, safeY, z);
+      if (!body.enraged && this.crossesWard(body.position, target)) continue;
       // Route pre-scan: the WAY there must be safe too; a comfortable step-down scales with size.
       const maxDrop = clampTo(body.walkGait.stationary.bodyHeight * 1.5, 3.0, 12.0);
       if (!this.isPathSafe(body.position, target, maxDrop)) continue;
@@ -423,3 +728,16 @@ export class SpiderAI {
 
 function wanderSpeedFactor(body) { return scaleToSpeedFactor(body.sizeScale) * CONFIG.wanderSpeedFactor; }
 function chaseSpeedFactor(body) { return scaleToSpeedFactor(body.sizeScale); }
+
+/** Is this player's view pointing at the spider's body (within ~45 degrees)? From the eyes. */
+export function isLookingAt(player, body) {
+  let look, eye;
+  try { look = player.getViewDirection(); } catch (e) { return false; }
+  try { eye = player.getHeadLocation(); } catch (e) { eye = { x: player.location.x, y: player.location.y + 1.62, z: player.location.z }; }
+  const dx = body.position.x - eye.x;
+  const dy = body.position.y - eye.y;
+  const dz = body.position.z - eye.z;
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (len < 1e-6) return true;
+  return (look.x * dx + look.y * dy + look.z * dz) / len > HUNTER_SEEN_DOT;
+}

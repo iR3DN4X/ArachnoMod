@@ -10,6 +10,8 @@ import com.heledron.spideranimation.spider.TargetBehaviour
 import net.minecraft.core.particles.ParticleTypes
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.entity.player.Player
 import org.joml.Vector3d
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -19,7 +21,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-enum class SpiderMode { WANDER, ALERT, CHASE, LURE, REPEL }
+enum class SpiderMode { WANDER, ALERT, CHASE, LURE, REPEL, FIGHT }
 
 /**
  * Per-spider AI memory: current mode, how long it's been in it, and the patrol anchor/target.
@@ -54,6 +56,11 @@ class SpiderAIState(var anchor: Vector3d) {
     // REPEL: the furthest from the idol it has got so far, and how long since that last grew.
     var repelBest = 0.0
     var repelStall = 0
+
+    // Set by SpiderMob every tick: is it tamed (a pet follows creative players too), and the mob
+    // its owner last punched while in creative (FIGHT), if it is still worth going after.
+    var tamed = false
+    var fightTarget: LivingEntity? = null
 }
 
 
@@ -71,6 +78,12 @@ class SpiderAIState(var anchor: Vector3d) {
  *           is what fixed the gait-swap glitching at the chase edge).
  *  REPEL  - inside a Warding Idol's zone with nobody it may reach: run straight away from the
  *           idol until it is out, then go back to wandering. Outranks everything, even the laser.
+ *  FIGHT  - a TAMED spider whose owner, in creative, just punched a mob: go for that mob (the
+ *           bite is SpiderMob's) until it dies or gets away. Only REPEL and the laser outrank it.
+ *
+ * Who it notices ([notices]): never a spectator, and a creative player only while it is tamed -
+ * like vanilla mobs, a wild spider does not hunt anyone in creative; it just wanders. A tamed one
+ * still follows its people around in creative, as a pet does.
  *
  * Warding idols also fence the body out (SpiderBody's barriers, at most one block past the
  * edge) and hide every player deeper inside than that, so running into one breaks a chase.
@@ -90,6 +103,30 @@ object SpiderAI {
 
     fun reset() {
         states.clear()
+    }
+
+    /** Can this spider see [player] at all? Never a spectator; a creative player only if it is
+     *  tamed (a pet keeps following you, a wild one ignores you, as vanilla mobs do). */
+    fun notices(player: Player, tamed: Boolean): Boolean =
+        !player.isSpectator && (tamed || !player.isCreative)
+
+    /** SpiderMob, every tick: whether it is tamed, and what (if anything) it should fight. */
+    fun setPet(entity: EcsEntity, body: SpiderBody, tamed: Boolean, fightTarget: LivingEntity?) {
+        val state = states.getOrPut(entity) { SpiderAIState(Vector3d(body.position)) }
+        state.tamed = tamed
+        state.fightTarget = fightTarget
+    }
+
+    /** True while a tamed spider is going after the mob its owner punched (SpiderMob bites it). */
+    fun isFighting(entity: EcsEntity): Boolean = states[entity]?.mode == SpiderMode.FIGHT
+
+    /** The body was just moved somewhere else entirely (the Nether rescue): forget the route,
+     *  patrol from the new spot. */
+    fun onTeleported(entity: EcsEntity, body: SpiderBody) {
+        val state = states[entity] ?: return
+        if (state.mode != SpiderMode.FIGHT) enterWander(state, body)
+        state.anchor = Vector3d(body.position)
+        clearOpening(state)
     }
 
     fun update(entity: EcsEntity, body: SpiderBody, chaseRadius: Double) {
@@ -154,10 +191,31 @@ object SpiderAI {
         }
         if (state.mode == SpiderMode.LURE) enterWander(state, body)   // the dot just went out
 
+        // A TAMED spider whose owner punched a mob in creative goes for it (SpiderMob decides
+        // what counts and lands the bite). Only the ward and the laser outrank it.
+        val fightTarget = state.fightTarget
+        if (fightTarget != null && fightTarget.isAlive && fightTarget.level() === level &&
+            fightTarget.distanceToSqr(body.position.x, body.position.y, body.position.z) <=
+                (chaseRadius * Config.CHASE_EXIT_MULTIPLIER.get()).let { it * it }) {
+            if (state.mode != SpiderMode.FIGHT) {
+                state.mode = SpiderMode.FIGHT
+                state.modeTimer = 0
+                state.squeezing = false
+                state.passageClearance = 0
+                clearOpening(state)
+            }
+            tickFight(entity, body, fightTarget)
+            return
+        }
+        if (state.mode == SpiderMode.FIGHT) enterWander(state, body)   // it died, or got away
+
         // A player more than the bite band inside a warding idol's zone is out of reach, so it
         // does not see them at all: no hunt starts on them, and a running one breaks off. The
-        // enraged boss sees everyone.
-        var nearestPlayer = level.players().filter { body.enraged || !WardRegistry.isSafe(level, it.x, it.z) }.minByOrNull {
+        // enraged boss sees everyone. Nobody in spectator, and nobody in creative unless it is
+        // tamed (see notices).
+        var nearestPlayer = level.players().filter {
+            notices(it, state.tamed) && (body.enraged || !WardRegistry.isSafe(level, it.x, it.z))
+        }.minByOrNull {
             it.distanceToSqr(body.position.x, body.position.y, body.position.z)
         }
 
@@ -195,10 +253,10 @@ object SpiderAI {
                     tickChase(entity, body, state, nearestPlayer)
                 }
             }
-            // Unreachable: the lure and repel branches above return, and an expired lure (or a
-            // finished repel) is turned back into WANDER before we get here. Kotlin still wants
-            // the cases spelled out.
-            SpiderMode.LURE, SpiderMode.REPEL -> tickWander(entity, body, state)
+            // Unreachable: the lure, repel and fight branches above return, and an expired lure
+            // (or a finished repel or fight) is turned back into WANDER before we get here.
+            // Kotlin still wants the cases spelled out.
+            SpiderMode.LURE, SpiderMode.REPEL, SpiderMode.FIGHT -> tickWander(entity, body, state)
         }
     }
 
@@ -239,6 +297,14 @@ object SpiderAI {
             state.lureTimer = ticks
         }
         return true
+    }
+
+    /** Go for the mob the owner punched, at chase speed, stopping inside bite reach like a chase
+     *  does. Straight at it: a mob is rarely holed up behind walls the way a player is. */
+    private fun tickFight(entity: EcsEntity, body: SpiderBody, target: LivingEntity) {
+        body.setSpeedScale(chaseSpeedFactor(body))
+        val arrive = (body.walkGait.stationary.bodyHeight * 2.0).coerceAtMost(4.0)
+        entity.replaceComponent<SpiderBehaviour>(TargetBehaviour(fenced(body, Vector3d(target.x, target.y, target.z)), arrive))
     }
 
     /** Scurry to the dot, and keep drawing it so the pointer is visible while it lasts. */
@@ -524,7 +590,7 @@ object SpiderAI {
         }
 
         // Watched from outside commit range: freeze. Not a step, not a sway.
-        val anyoneWatching = body.level.players().any { isLookingAt(it, body) }
+        val anyoneWatching = body.level.players().any { notices(it, state.tamed) && isLookingAt(it, body) }
         if (anyoneWatching && horizontal > HUNTER_COMMIT_RANGE) {
             entity.replaceComponent<SpiderBehaviour>(StayStillBehaviour())
             return

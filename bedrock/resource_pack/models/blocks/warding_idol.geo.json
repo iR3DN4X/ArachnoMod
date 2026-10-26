@@ -1,0 +1,39 @@
+{
+  "format_version": "1.21.0",
+  "minecraft:geometry": [
+    {
+      "description": {
+        "identifier": "geometry.arachno_warding_idol",
+        "texture_width": 16,
+        "texture_height": 16
+      },
+      "bones": [
+        {
+          "name": "idol",
+          "pivot": [ 0, 0, 0 ],
+          "cubes": [
+            {
+              "origin": [ -8, 0, -8 ], "size": [ 16, 16, 16 ],
+              "uv": {
+                "north": { "uv": [ 0, 0 ], "uv_size": [ 16, 16 ] },
+                "south": { "uv": [ 0, 0 ], "uv_size": [ 16, 16 ] },
+                "east": { "uv": [ 0, 0 ], "uv_size": [ 16, 16 ] },
+                "west": { "uv": [ 0, 0 ], "uv_size": [ 16, 16 ] },
+                "up": { "uv": [ 0, 0 ], "uv_size": [ 16, 16 ] },
+                "down": { "uv": [ 0, 0 ], "uv_size": [ 16, 16 ] }
+              }
+            },
+            { "origin": [ -6, 11, -8.25 ], "size": [ 1, 1, 0.25 ], "uv": { "north": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "east": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "west": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ 5, 11, -8.25 ], "size": [ 1, 1, 0.25 ], "uv": { "north": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "east": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "west": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ -6, 11, 8 ], "size": [ 1, 1, 0.25 ], "uv": { "south": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "east": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "west": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ 5, 11, 8 ], "size": [ 1, 1, 0.25 ], "uv": { "south": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "east": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "west": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ -8.25, 11, -6 ], "size": [ 0.25, 1, 1 ], "uv": { "west": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "north": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "south": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ -8.25, 11, 5 ], "size": [ 0.25, 1, 1 ], "uv": { "west": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "north": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "south": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ 8, 11, -6 ], "size": [ 0.25, 1, 1 ], "uv": { "east": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "north": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "south": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } },
+            { "origin": [ 8, 11, 5 ], "size": [ 0.25, 1, 1 ], "uv": { "east": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "north": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "south": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "up": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" }, "down": { "uv": [ 0, 0 ], "uv_size": [ 1, 1 ], "material_instance": "eye" } } }
+          ]
+        }
+      ]
+    }
+  ]
+}

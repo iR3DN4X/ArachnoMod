@@ -1,0 +1,15 @@
+{
+  "format_version": "1.21.60",
+  "minecraft:recipe_shaped": {
+    "description": { "identifier": "arachno:warding_idol" },
+    "tags": [ "crafting_table" ],
+    "pattern": [ "DSD", "SNS", "DSD" ],
+    "key": {
+      "D": { "item": "minecraft:diamond" },
+      "S": { "item": "minecraft:deepslate" },
+      "N": { "item": "minecraft:netherite_ingot" }
+    },
+    "unlock": [ { "item": "minecraft:netherite_ingot" } ],
+    "result": { "item": "arachno:warding_idol", "count": 1 }
+  }
+}

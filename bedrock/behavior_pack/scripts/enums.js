@@ -12,6 +12,17 @@ export function isCreative(player) {
   try { return same(player.getGameMode(), mc.GameMode, "Creative"); } catch (e) { return false; }
 }
 
+export function isSpectator(player) {
+  try { return same(player.getGameMode(), mc.GameMode, "Spectator"); } catch (e) { return false; }
+}
+
+/** Can a spider see this player at all (Java v1.8.6)? Never a spectator; someone in creative only
+ *  if the spider is tamed - like vanilla mobs, a wild one ignores you in creative and wanders, while
+ *  a tamed one still follows you around, as a pet does. */
+export function notices(player, tamed) {
+  return !isSpectator(player) && (tamed || !isCreative(player));
+}
+
 export function isPeacefulDifficulty() {
   try { return same(mc.world.getDifficulty(), mc.Difficulty, "Peaceful"); } catch (e) { return false; }
 }

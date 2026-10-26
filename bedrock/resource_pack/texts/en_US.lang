@@ -1,3 +1,6 @@
 entity.arachno:spider.name=Netherite Octoarachnopod
-item.spawn_egg.entity.arachno:spider.name=Netherite Octoarachnopod Spawn Egg
+item.arachno:octoarachnopod_spawn_egg.name=Netherite Octoarachnopod Spawn Egg
 item.arachno:spider_tamer.name=Spider Tamer
+tile.arachno:warding_idol.name=Warding Idol
+item.arachno:spider_laser_pointer.name=Spider Laser Pointer
+item.arachno:spider_config_book.name=Spider Config Book

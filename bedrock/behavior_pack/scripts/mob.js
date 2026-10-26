@@ -19,6 +19,18 @@ export function distanceToScale(distance) {
   return CONFIG.minSize + (CONFIG.maxSize - CONFIG.minSize) * t;
 }
 
+/** SpiderMob.fixedSizeScale: the size at which the spider stands fixedSizeBlocks tall. Standing
+ *  height is exactly linear in size - Java measured the top of the highest leg 2.64 blocks up per
+ *  unit of size (the body CENTRE is only 1.1, so a headroom-style estimate would be far too tall). */
+export function fixedSizeScale() {
+  return CONFIG.fixedSizeBlocks / 2.64;
+}
+
+/** The size a ridden spider holds: riddenSize, or the one fixed size when growth is off. */
+export function riddenScale() {
+  return CONFIG.enableGrowth ? CONFIG.riddenSize : fixedSizeScale();
+}
+
 /** SpiderMob.approachScale: 30% of the way per tick, capped at +12% / -25% per tick. */
 export function approachScale(current, target) {
   const lerped = current + (target - current) * 0.3;
@@ -55,18 +67,40 @@ export function waterGrowthScale(world, body) {
 }
 
 /**
- * SpiderMob.tick's size decision for this tick (the netherite spider, growth enabled):
- * distance (or water) size, THE SQUEEZE, the passage fit, the headroom cap, the prey's-room cap.
- * `nearest` is the nearest player at any range (or null), `horizontalDistance` to them.
+ * SpiderMob.tick's size decision for this tick: distance (or water) size, THE SQUEEZE, the passage
+ * fit, the headroom cap, the prey's-room cap. `nearest` is the nearest player at any range (or
+ * null), `horizontalDistance` to them; `variant` the spider's ("netherite", "camo", "poison",
+ * "hunter").
  */
-export function targetScale(world, body, ai, currentScale, nearest, horizontalDistance) {
+export function targetScale(world, body, ai, currentScale, nearest, horizontalDistance, variant = "netherite") {
   const squeezing = ai ? ai.isSqueezing() : false;
-  const waterScale = CONFIG.growInWater && !squeezing ? waterGrowthScale(world, body) : null;
-  let target = squeezing
-    ? CONFIG.squeezeSize
-    : Math.max(distanceToScale(horizontalDistance), waterScale !== null ? waterScale : 0);
-  // Doorway/crawl-hole fit (chase pathfinding).
-  if (!squeezing && ai) {
+  const hunter = variant === "hunter";
+  // NO-GROW MODE (enableGrowth false, Java v1.8.5): every variant holds ONE size, fixedSizeBlocks tall.
+  const growth = CONFIG.enableGrowth;
+  const waterScale = growth && CONFIG.growInWater && !squeezing && !hunter ? waterGrowthScale(world, body) : null;
+  let target;
+  if (hunter) {
+    // THE HUNTER never changes size: fixed at hunterSize whatever the distance, water depth or
+    // opening ahead (it fits doorways as it is; holes are walls to it - deep water is its one
+    // weakness, since it will not grow above the surface).
+    target = growth ? CONFIG.hunterSize : fixedSizeScale();
+  } else if (squeezing) {
+    // The squeeze may only ever SHRINK a fixed-size spider, never enlarge a small one.
+    target = growth ? CONFIG.squeezeSize : Math.min(CONFIG.squeezeSize, fixedSizeScale());
+  } else if (!growth) {
+    // No distance growth, no water growth, and poisonSize gives way to fixedSizeBlocks too. The
+    // doorway, crawl-hole and headroom caps below still apply - they only shrink.
+    target = fixedSizeScale();
+  } else if (variant === "poison") {
+    // THE POISON variant holds ONE size too (Java v1.8.1: distance sizing read as bobbing). Placed
+    // AFTER the squeeze so it can still pour itself down a hole, and the caps below still apply,
+    // so it still threads doorways and crawl-holes.
+    target = CONFIG.poisonSize;
+  } else {
+    target = Math.max(distanceToScale(horizontalDistance), waterScale !== null ? waterScale : 0);
+  }
+  // Doorway/crawl-hole fit (chase pathfinding). The hunter walks through openings at its own size.
+  if (!squeezing && !hunter && ai) {
     const fit = ai.passageFitScale();
     if (fit !== null) target = Math.min(target, fit);
   }

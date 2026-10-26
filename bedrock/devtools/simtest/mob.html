@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Mob checks</title>
-<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js" } }</script>
+<script type="importmap">{ "imports": { "@minecraft/server": "/test/mcstub.js", "@minecraft/server-ui": "/test/mcuistub.js" } }</script>
 <pre id="out">running...</pre>
 <script type="module">
   // The spider as a MOB (the Java mod's v1.0-v1.2 features) through the real main.js over the stub:
@@ -36,7 +36,8 @@
         const d = hdist(s.entity.location, T.player.location);
         check("spawned 30-34 blocks away", d >= 29.9 && d <= 34.1, `d=${d.toFixed(1)}`);
         check("legs drawn", s.renderer.liveCount() === s.body.legs.length, `${s.renderer.liveCount()}/${s.body.legs.length}`);
-        check("health = variant max", Math.abs(s.entity.getComponent("minecraft:health").currentValue - (s.variant === "camo" ? 600 : 350)) < 1e-6, `${s.variant} hp=${s.entity.getComponent("minecraft:health").currentValue}`);
+        const maxHp = { netherite: 350, camo: 600, poison: 500, hunter: 400 }[s.variant];
+        check("health = variant max", Math.abs(s.entity.getComponent("minecraft:health").currentValue - maxHp) < 1e-6, `${s.variant} hp=${s.entity.getComponent("minecraft:health").currentValue}`);
         const at = s.entity.location, b = s.body.position;
         check("hitbox follows the body", Math.hypot(at.x - b.x, at.y - b.y, at.z - b.z) < 1e-3);
       }
@@ -130,20 +131,1023 @@
       T.player.move = { x: 1, y: 0 };   // strafe left: looking +x, left is -z
       T.tick(40);
       check("strafe moves it sideways", Math.abs(s.body.position.z - z0) > 2, `dz ${(s.body.position.z - z0).toFixed(1)}`);
-      T.player.move = { x: 0, y: 0 };
-      // a teleport that knocks the rider off: they are put back unless sneaking
+      // if moving the mob ever knocks the rider off, they go straight back on, every tick
+      T.MockEntity.unseatOnTeleport = true;
+      const tp0 = s.entity.teleports;
+      T.player.move = { x: 0, y: 1 };
+      let unseatedTicks = 0;
+      for (let t = 0; t < 40; t++) { T.tick(1); if (s.currentRider() !== T.player) unseatedTicks++; }
+      T.MockEntity.unseatOnTeleport = false;
+      check("a teleport that knocks you off puts you straight back", s.entity.teleports - tp0 > 30 && unseatedTicks === 0,
+        `teleports ${s.entity.teleports - tp0}, off for ${unseatedTicks} ticks`);
+      // getting off yourself: Bedrock's dismount key is NOT a Sneak press, so nothing hints at it -
+      // the rider is simply gone. They stay off, even while it walks after them (round 18 bug: put back on).
       s.entity.riders = []; T.player.ridingOn = null;
+      T.player.move = { x: 0, y: 0 };
+      T.player.location = { x: s.body.position.x + 12, y: F, z: s.body.position.z };
+      const tp1 = s.entity.teleports;
+      let reseated = 0;
+      for (let t = 0; t < 100; t++) { T.tick(1); if (s.currentRider()) reseated++; }
+      check("getting off yourself (no Sneak press) keeps you off", reseated === 0 && s.entity.teleports - tp1 > 30,
+        `re-seated ${reseated} ticks, teleports ${s.entity.teleports - tp1}`);
+      // crouching doesn't climb on (like the entity's own crouching_skip_interact); standing does
+      T.player.location = { x: s.body.position.x + 1, y: F, z: s.body.position.z };
+      T.player.isSneaking = true;
+      T.interact(s.entity, null);
       T.tick(2);
-      check("re-seated after an accidental dismount", s.currentRider() === T.player);
-      s.entity.riders = []; T.player.ridingOn = null; T.player.isSneaking = true;
+      check("crouching with an empty hand doesn't climb on", s.currentRider() === null);
+      T.player.isSneaking = false;
+      T.interact(s.entity, null);
       T.tick(2);
-      check("sneaking gets you off for good", s.currentRider() === null);
+      check("...standing up, an empty hand climbs back on", s.currentRider() === T.player);
+      s.entity.riders = []; T.player.ridingOn = null;
       // the data-driven path: the entity's own interaction sets the property, the script follows
       const s2 = spawnHere();
       T.tick(2);
       s2.entity.triggerEvent("arachno:tamer_used");
       T.tick(2);
       check("tamed via the entity's own interaction too", s2.tamed);
+    } else if (CASE === "poison") {
+      const { camoFor } = await import("/camo.js");
+      const s = spawnHere("poison");
+      T.tick(2);
+      const hp = () => s.entity.getComponent("minecraft:health").currentValue;
+      check("poison has 500 hp", hp() === 500, `hp=${hp()}`);
+      check("every leg is warped wart", !!s.body.legTex && s.body.legTex.every((t) => t === camoFor("warped_wart_block").tex));
+      T.player.location = { x: -24.5, y: F, z: 0.5 };
+      T.tick(60);
+      check("fixed size far away (poisonSize 1.0)", Math.abs(s.body.sizeScale - 1.0) < 0.05, `size ${s.body.sizeScale.toFixed(2)}`);
+      // let it come for a player standing still: rear up, lunge, bite out of the lunge
+      const n0 = T.log.length;
+      let lungeAt = -1, frontUp = -9, riseY = 0, y0 = 0, wasLunging = false;
+      const bites = [], leaps = [];
+      for (let t = 1; t <= 500; t++) {
+        const before = T.player.bites;
+        T.tick(1);
+        if (s.body.isLunging && !wasLunging) leaps.push(t);
+        wasLunging = s.body.isLunging;
+        if (s.body.isLunging && lungeAt < 0) { lungeAt = t; y0 = s.body.position.y; }
+        if (s.body.isLunging && !s.body.isLungeStriking) {
+          frontUp = Math.max(frontUp, s.body.legs[0].endEffector.y - s.body.position.y);
+          riseY = Math.max(riseY, s.body.position.y - y0);
+        }
+        if (T.player.bites > before) bites.push(t);
+      }
+      check("it rears up: body lifts, front feet raised above it", lungeAt > 0 && frontUp > 0 && riseY > 0.1, `lunge at t=${lungeAt}, front foot ${frontUp.toFixed(2)} above the body, body rose ${riseY.toFixed(2)}`);
+      check("bites only out of a lunge", bites.length >= 2, `bites at ${bites.slice(0, 5).join(",")}`);
+      check("bite = 3 hearts (6) + Poison II for 30 s",
+        T.log.some((l) => l.startsWith("player hurt 6 (entityAttack) by arachno:spider")) && T.log.some((l) => l === "effect poison 600 1"));
+      const gaps = leaps.slice(1).map((t, i) => t - leaps[i]);
+      check("one leap every 3 s, at most one bite per leap", gaps.every((g) => g >= 60) && bites.length <= leaps.length,
+        `${leaps.length} leaps (gaps ${gaps.slice(0, 4).join(",")}), ${bites.length} bites`);
+      check("squishes like warped wart", T.log.slice(n0).some((l) => l === `sound ${camoFor("warped_wart_block").step}`), camoFor("warped_wart_block").step);
+      const h0 = hp(); s.entity.applyDamage(4, { cause: "lava" });
+      check("it burns in lava (only netherite is fireproof)", Math.abs((h0 - hp()) - 4) < 1e-9);
+    } else if (CASE === "hunter") {
+      const { camoFor } = await import("/camo.js");
+      const s = spawnHere("hunter");
+      T.tick(2);
+      const hp = () => s.entity.getComponent("minecraft:health").currentValue;
+      check("hunter has 400 hp", hp() === 400, `hp=${hp()}`);
+      check("every leg is black concrete", !!s.body.legTex && s.body.legTex.every((t) => t === camoFor("black_concrete").tex));
+      // watched from afar: dead still
+      T.player.location = { x: s.body.position.x - 26, y: F, z: s.body.position.z };
+      T.setView({ x: 1, y: 0, z: 0 });
+      T.tick(40);
+      check("it spots you and hunts", s.ai.isChasing());
+      const a = s.body.position.copy();
+      T.tick(60);
+      const moved = Math.hypot(s.body.position.x - a.x, s.body.position.z - a.z);
+      check("watched from afar, it freezes", moved < 0.5, `moved ${moved.toFixed(2)} in 3 s`);
+      check("fixed size far away (hunterSize 1.1)", Math.abs(s.body.sizeScale - 1.1) < 0.05, `size ${s.body.sizeScale.toFixed(2)}`);
+      // look away: it comes, in silence
+      const d0 = hdist(s.body.position, T.player.location);
+      T.setView({ x: -1, y: 0, z: 0 });
+      const n0 = T.log.length;
+      T.tick(30);
+      const d1 = hdist(s.body.position, T.player.location);
+      check("unwatched, it closes in", d0 - d1 > 3, `${d0.toFixed(1)} -> ${d1.toFixed(1)} blocks`);
+      check("silent: no footsteps, no landings", !T.log.slice(n0).some((l) => /^sound (step|fall)\./.test(l)));
+      // blindness: within 16 blocks while it hunts, topped up every 2 s
+      T.player.location = { x: s.body.position.x - 10, y: F, z: s.body.position.z };
+      T.setView({ x: 1, y: 0, z: 0 });   // watched at 10 blocks: frozen, but you are in range
+      const n1 = T.log.length;
+      T.tick(130);
+      const blinds = T.log.slice(n1).filter((l) => l === "effect blindness 600 0").length;
+      check("blinds you within 16 blocks, topped up every 2 s", blinds >= 3 && blinds <= 4, `${blinds} doses in 6.5 s`);
+      T.player.location = { x: s.body.position.x - 30, y: F, z: s.body.position.z };
+      const n2 = T.log.length;
+      T.tick(100);
+      check("out of range, no more blindness", !T.log.slice(n2).some((l) => l.startsWith("effect blindness")));
+      // inside commit range your eyes don't help: it takes you anyway
+      T.player.location = { x: s.body.position.x - 4, y: F, z: s.body.position.z };
+      const bites0 = T.player.bites;
+      T.tick(120);
+      check("inside 6 blocks, watching doesn't stop it", T.player.bites > bites0 && T.log.some((l) => l.startsWith("player hurt 8 (entityAttack)")), `${T.player.bites - bites0} bites`);
+    } else if (CASE === "enrage") {
+      const { ItemStack } = await import("@minecraft/server");
+      const { scaleToSpeedFactor } = await import("/mob.js");
+      const spec = await (await fetch("/bp/entities/spider.json")).json();
+      const boss = spec["minecraft:entity"].component_groups["arachno:enraged"]["minecraft:boss"];
+      check("the boss bar is named as in Java", boss && boss.name === "Enraged Netherite Spider", JSON.stringify(boss));
+      setConfig("netheriteDropChance", 0);   // the block must come anyway
+      const s = spawnHere();
+      T.tick(2);
+      const hpc = () => s.entity.getComponent("minecraft:health");
+      s.entity.applyDamage(50, { cause: "magic" });   // 350 -> 300: damage is NOT forgiven
+      T.player.slots[0] = new ItemStack("minecraft:netherite_ingot", 3);
+      const n0 = T.log.length, p0 = { ...T.counts };
+      T.interact(s.entity, "minecraft:netherite_ingot");
+      T.tick(2);
+      check("a netherite ingot enrages the netherite variant", s.enraged && s.entity.groups.has("arachno:enraged"));
+      check("health topped up by the bonus, damage kept: 300 + 350 = 650 of 700",
+        Math.abs(s.realHealth() - 650) < 1e-6 && Math.abs(hpc().currentValue / hpc().effectiveMax - 650 / 700) < 1e-6,
+        `real ${s.realHealth().toFixed(1)}, bar ${(100 * hpc().currentValue / hpc().effectiveMax).toFixed(1)}%`);
+      check("the ingot is used up (survival)", T.player.slots[0] && T.player.slots[0].amount === 2, `${T.player.slots[0] && T.player.slots[0].amount} left`);
+      const dust = (T.counts["p:minecraft:redstone_wire_dust_particle"] || 0) - (p0["p:minecraft:redstone_wire_dust_particle"] || 0);
+      const sparks = (T.counts["p:minecraft:electric_spark_particle"] || 0) - (p0["p:minecraft:electric_spark_particle"] || 0);
+      check("ignition: thunder, red dust, sparks", T.log.slice(n0).includes("sound ambient.weather.thunder") && dust >= 60 && sparks >= 40, `dust ${dust}, sparks ${sparks}`);
+      // armour still applies, then the hit is counted in the boss pool's points
+      const before = s.realHealth();
+      s.entity.applyDamage(7, { cause: "entityAttack" });
+      check("still wears the netherite suit (7 -> ~1.79), bar moves by the real damage",
+        Math.abs((before - s.realHealth()) - 1.792) < 0.01, `took ${(before - s.realHealth()).toFixed(3)} real`);
+      T.interact(s.entity, "minecraft:netherite_ingot");
+      T.tick(2);
+      check("a second ingot does nothing and is kept", T.player.slots[0].amount === 2);
+      // the aura, the speed, the bite
+      const a0 = T.counts["p:minecraft:blue_flame_particle"] || 0;
+      const bites = [];
+      for (let t = 1; t <= 300; t++) { const b = T.player.bites; T.tick(1); if (T.player.bites > b) bites.push(t); }
+      check("it wears the storm (soul flame at its feet)", (T.counts["p:minecraft:blue_flame_particle"] || 0) - a0 >= 10);
+      const want = scaleToSpeedFactor(s.body.sizeScale) * 1.5;
+      // (setSpeedScale skips changes under 0.1%, as in Java, so it may trail by that much)
+      check("1.5x chase speed", s.ai.isChasing() && Math.abs(s.body.speedScale / want - 1) <= 0.0015, `speedScale ${s.body.speedScale.toFixed(4)} want ${want.toFixed(4)}`);
+      check("a 10-heart bite", bites.length > 0 && T.log.some((l) => l.startsWith("player hurt 20 (entityAttack)")), `bites at ${bites.slice(0, 3).join(",")}`);
+      // the payout
+      s.entity.applyDamage(100000, { cause: "magic" });
+      T.tick(3);
+      check("slain, it always drops a FULL netherite block", T.log.some((l) => l.startsWith("item minecraft:netherite_block")) && !T.log.some((l) => l.startsWith("item minecraft:netherite_ingot")));
+      // creative keeps the ingot; tamed and the other variants can't be enraged
+      T.player.gameMode = "Creative";
+      const c = spawnHere();
+      T.tick(2);
+      T.interact(c.entity, "minecraft:netherite_ingot");
+      T.tick(2);
+      check("in Creative the ingot is kept", c.enraged && T.player.slots[0].amount === 2);
+      T.player.gameMode = "Survival";
+      const t = spawnHere();
+      T.tick(2);
+      T.interact(t.entity, "arachno:spider_tamer");
+      T.tick(2);
+      T.interact(t.entity, "minecraft:netherite_ingot");
+      T.tick(2);
+      const cam = spawnHere("camo");
+      T.tick(2);
+      T.interact(cam.entity, "minecraft:netherite_ingot");
+      T.tick(2);
+      check("a tamed spider and the camo variant can't be enraged", t.tamed && !t.enraged && !cam.enraged && T.player.slots[0].amount === 2);
+    } else if (CASE === "permadeath") {
+      const { world } = await import("@minecraft/server");
+      setConfig("permadeath", true);
+      setConfig("spawnMinMinutes", 0.05); setConfig("spawnMaxMinutes", 0.05);
+      const s = spawnHere();
+      T.tick(2);
+      s.entity.applyDamage(100000, { cause: "entityAttack" });
+      T.tick(3);
+      check("the kill is saved with the world", sm.kills() === 1 && world.getDynamicProperty("arachno:kills") === 1, `kills ${sm.kills()}, saved ${world.getDynamicProperty("arachno:kills")}`);
+      T.tick(60 * 60 * 20);   // an hour
+      check("with permadeath on, it never comes back", spiders().length === 0 && sm.respawnTimer === -1, `${spiders().length} spiders, timer ${sm.respawnTimer}`);
+      const egg = spawnHere();
+      T.tick(2);
+      check("a spawn egg still works", spiders().length === 1 && egg.alive);
+      egg.entity.applyDamage(100000, { cause: "entityAttack" });
+      T.tick(3);
+      check("that kill counts too", sm.kills() === 2);
+      setConfig("permadeath", false);
+      T.tick(200);
+      check("permadeath off: the hunt resumes", spiders().length === 1, `${spiders().length} spiders`);
+    } else if (CASE === "legs") {
+      const results = [];
+      let ok = true;
+      for (const n of [1, 2, 3, 4, 5, 6, 12, 16]) {
+        setConfig("netheriteLegs", n);
+        T.player.location = { x: 0.5, y: F, z: 0.5 };
+        const s = spawnHere();
+        T.tick(2);
+        const x0 = s.body.position.x;
+        T.player.location = { x: s.body.position.x + 24, y: F, z: 0.5 };
+        T.tick(100);
+        const moved = s.body.position.x - x0;
+        const good = s.body.legs.length === n && s.renderer.liveCount() === n && moved > 3 && Number.isFinite(s.body.position.y);
+        if (!good) ok = false;
+        results.push(`${n}:${s.body.legs.length}legs/${moved.toFixed(1)}b`);
+      }
+      check("netheriteLegs 1-16: every count builds, draws and walks", ok, results.join(" "));
+      // posture at a fixed size: 1-2 legs can't hold the body up and drag it (Java's crawl); 3+ walk upright
+      setConfig("minSize", 1); setConfig("maxSize", 1);
+      const posture = {};
+      for (const n of [1, 2, 3, 8]) {
+        setConfig("netheriteLegs", n);
+        T.player.location = { x: 0.5, y: F, z: 0.5 };
+        const s = spawnHere();
+        T.tick(2);
+        T.player.location = { x: s.body.position.x + 60, y: F, z: 0.5 };
+        let sum = 0, cnt = 0;
+        for (let t = 0; t < 100; t++) { T.tick(1); if (t > 10) { sum += s.body.position.y - F; cnt++; } }
+        posture[n] = sum / cnt;
+      }
+      check("1-2 legs crawl on the floor, 3+ walk upright", posture[1] < 0.15 && posture[2] < 0.15 && posture[3] > 0.9 && posture[8] > 0.9,
+        Object.entries(posture).map(([n, h]) => `${n} legs ${h.toFixed(2)}`).join(", ") + " blocks up");
+      setConfig("minSize", 0.6); setConfig("maxSize", 15);
+      setConfig("netheriteLegs", 16);
+      const camo = spawnHere("camo");
+      T.tick(2);
+      check("only the netherite variant changes (camo stays 8)", camo.body.legs.length === 8);
+      setConfig("netheriteArmor", 0); setConfig("netheriteArmorToughness", 0);
+      const bare = spawnHere();
+      T.tick(2);
+      const h0 = bare.realHealth();
+      bare.entity.applyDamage(7, { cause: "entityAttack" });
+      check("netheriteArmor 0: a bare health pool takes the full hit", Math.abs((h0 - bare.realHealth()) - 7) < 1e-9, `took ${(h0 - bare.realHealth()).toFixed(3)}`);
+    } else if (CASE === "rearm") {
+      // Java v1.3.2: changing a timing re-arms the running countdown, crediting the time served.
+      T.tick(1);
+      check("first spawn armed for 1 minute", sm.respawnTimer >= 1199 && sm.respawnTimer <= 1201, `timer ${sm.respawnTimer}`);
+      T.tick(600);
+      setConfig("spawnMinMinutes", 2); setConfig("spawnMaxMinutes", 2);
+      check("raised to 2 min half-way: 2400 - 600 served = 1800 left", Math.abs(sm.respawnTimer - 1800) <= 1, `timer ${sm.respawnTimer}`);
+      setConfig("spawnMinMinutes", 0.25); setConfig("spawnMaxMinutes", 0.25);
+      T.tick(3);
+      check("lowered below the time served: it spawns at once", spiders().length === 1, `${spiders().length} spiders, timer ${sm.respawnTimer}`);
+      const s = spiders()[0];
+      s.entity.applyDamage(100000, { cause: "entityAttack" });
+      T.tick(1203);
+      setConfig("respawnAfterKillMinutes", 60);
+      check("kill cooldown raised to 60 min after 1 min: 72000 - ~1200 left", Math.abs(sm.respawnTimer - (72000 - 1201)) <= 3, `timer ${sm.respawnTimer}`);
+      setConfig("chaseDistance", 100);
+      check("an unrelated setting leaves the countdown alone", Math.abs(sm.respawnTimer - (72000 - 1201)) <= 3, `timer ${sm.respawnTimer}`);
+    } else if (CASE === "relocate") {
+      // Java v1.8.2: still loaded but far from everyone -> moved near someone, never a kill.
+      setConfig("relocateDistanceBlocks", 0);
+      const s = spawnHere();
+      T.tick(2);
+      T.player.location = { x: 400.5, y: F, z: 0.5 };
+      T.tick(400);
+      check("relocateDistanceBlocks 0: it stays where it is", spiders()[0] === s, `${spiders().length} spiders`);
+      setConfig("relocateDistanceBlocks", 192);
+      T.tick(150);
+      check("not before 10 s of being stranded", spiders()[0] === s);
+      T.tick(80);
+      const n = spiders()[0];
+      check("stranded 10 s past 192 blocks: a fresh one near the player", n && n !== s && hdist(n.body.position, T.player.location) < 40,
+        n ? `${hdist(n.body.position, T.player.location).toFixed(1)} blocks away` : "none");
+      check("relocating is never a kill (no tally, no trophy, no cooldown)", sm.kills() === 0 && !T.log.some((l) => l.startsWith("item ")) && sm.respawnTimer === -1);
+    } else if (CASE === "dimensions") {
+      setConfig("spawnMinMinutes", 0.05); setConfig("spawnMaxMinutes", 0.05);
+      T.tick(1);
+      T.command("arachno:spidertoggle", "spawninoverworld", "false");
+      T.tick(400);
+      check("spawnInOverworld false: no natural spawn there (the timer waits)", spiders().length === 0, `${spiders().length} spiders, timer ${sm.respawnTimer}`);
+      T.command("arachno:spidertoggle", "spawninoverworld", "true");
+      T.tick(80);
+      check("switched back on: it spawns", spiders().length === 1);
+      const s = spiders()[0];
+      T.player.dimension = T.nether;
+      T.tick(110);
+      const f = spiders()[0];
+      check("everyone left for the Nether: it follows them there", f && f !== s && f.dimension.id === "minecraft:nether", f ? f.dimension.id : "none");
+      T.player.dimension = T.dim;
+      T.tick(110);
+      T.command("arachno:spidertoggle", "spawninnether", "false");
+      const back = spiders()[0];
+      T.player.dimension = T.nether;
+      T.tick(200);
+      check("spawnInNether false: it won't follow you into the Nether", spiders()[0] === back && back.dimension.id === "minecraft:overworld", spiders()[0] ? spiders()[0].dimension.id : "none");
+      check("relocating was never a kill", sm.kills() === 0);
+    } else if (CASE === "skyblock") {
+      // Java v1.8.4: a SkyBlock world is genuine VOID - a test on ordinary ground proves nothing.
+      T.setVoid(true);
+      for (let x = -6; x <= 6; x++) for (let z = -6; z <= 6; z++) T.set(x, F - 1, z, "grass_block");
+      setConfig("spawnMinMinutes", 0.05); setConfig("spawnMaxMinutes", 0.05);
+      setConfig("spawnCloseFallbackDistance", 0);
+      T.tick(400);
+      check("void all round, fallback off: no spawn (the old behaviour)", spiders().length === 0, `timer ${sm.respawnTimer}`);
+      setConfig("spawnCloseFallbackDistance", 6);
+      let d = -1;
+      for (let t = 0; t < 250 && spiders().length === 0; t++) T.tick(1);
+      const s = spiders()[0];
+      if (s) d = hdist(s.entity.location, T.player.location);   // where it APPEARED, before it walks up
+      check("with the inward fallback it spawns on the island, as far out as the island allows", !!s && d >= 6 && d <= 9.5, `spawned ${d.toFixed(1)} blocks away`);
+      check("on the island, not in the void", !!s && Math.abs(s.body.position.x) <= 7.5 && Math.abs(s.body.position.z) <= 7.5);
+    } else if (CASE === "fixedsize") {
+      const { fixedSizeScale } = await import("/mob.js");
+      T.command("arachno:spidertoggle", "enablegrowth", "false");
+      T.command("arachno:spiderconfig", "fixedsizeblocks", "2");
+      const want = 2 / 2.64;
+      const sizes = {};
+      for (const v of ["netherite", "camo", "poison", "hunter"]) {
+        T.player.location = { x: 0.5, y: F, z: 0.5 };
+        const s = spawnHere(v === "netherite" ? "" : v);
+        T.player.location = { x: s.body.position.x + 30, y: F, z: 0.5 };   // far: it would grow
+        T.tick(60);
+        sizes[v] = s.body.sizeScale;
+      }
+      check("enableGrowth false: every variant holds fixedSizeBlocks (2 blocks = size 0.758)",
+        Object.values(sizes).every((sz) => Math.abs(sz - want) < 0.01) && Math.abs(fixedSizeScale() - want) < 1e-9,
+        Object.entries(sizes).map(([k, v]) => `${k} ${v.toFixed(3)}`).join(", "));
+      const s = spiders()[0];
+      T.interact(s.entity, "arachno:spider_tamer");
+      T.tick(2);
+      T.player.location = { x: s.body.position.x + 1, y: F, z: s.body.position.z };
+      T.interact(s.entity, null);
+      T.tick(60);
+      check("ridden, it keeps the fixed size (riddenSize ignored)", s.currentRider() === T.player && Math.abs(s.body.sizeScale - want) < 0.01, `size ${s.body.sizeScale.toFixed(3)}`);
+      s.entity.riders = []; T.player.ridingOn = null;
+      T.command("arachno:spidertoggle", "enablegrowth", "true");
+      T.player.location = { x: 0.5, y: F, z: 0.5 };
+      const g = spawnHere();   // netherite: the hunter keeps hunterSize whatever enableGrowth says
+      T.player.location = { x: g.body.position.x + 30, y: F, z: g.body.position.z };
+      let biggest = 0;
+      for (let t = 0; t < 60; t++) { T.tick(1); biggest = Math.max(biggest, g.body.sizeScale); }
+      check("growth back on: the netherite grows with distance again", biggest > 3, `reached size ${biggest.toFixed(2)} (it charges in and shrinks again)`);
+    } else if (CASE === "afterimage") {
+      // Going through a portal: the legs must come down while their chunks are still loaded, and a
+      // leg entity that was saved anyway must be gone the moment its chunk loads back in.
+      const s = spawnHere();
+      T.tick(5);
+      const legsBefore = s.renderer.liveCount();
+      T.player.dimension = T.nether;
+      T.tick(1);
+      check("everyone left its dimension: the legs come down at once", legsBefore === s.body.legs.length && s.renderer.liveCount() === 0 && live("arachno:leg").length === 0,
+        `${legsBefore} -> ${s.renderer.liveCount()} legs, ${live("arachno:leg").length} leg entities in the world`);
+      T.player.dimension = T.dim;
+      T.tick(2);
+      check("back within the 5 s grace: the same spider, legs redrawn", spiders()[0] === s && s.renderer.liveCount() === s.body.legs.length);
+      const ghost = new T.MockEntity("arachno:leg", { x: 3, y: F, z: 3 }, T.dim);
+      for (const fn of T.after.entityLoad.subs) fn({ entity: ghost });
+      check("a leftover leg loading with its chunk is removed at once (no 10 s sweep)", !ghost.isValid);
+      const mine = s.renderer.entities[0];
+      for (const fn of T.after.entityLoad.subs) fn({ entity: mine });
+      check("a live spider's own legs are left alone", mine.isValid && s.renderer.liveCount() === s.body.legs.length);
+    } else if (CASE === "netherroof") {
+      const { Vec3 } = await import("/engine/vec.js");
+      const { BlockWorld } = await import("/blocks.js");
+      const { groundYAt, SPAWN_CEILING_MARGIN } = await import("/ground.js");
+      // A Nether: the floor, and the bedrock ceiling band (y 123-127) under the build limit of 128.
+      for (let x = -40; x <= 60; x++) for (let z = -30; z <= 30; z++) for (let y = 123; y <= 127; y++) T.set(x, y, z, "bedrock");
+      T.player.dimension = T.nether;
+      // Move a whole spider - body, feet and step targets together, as if it had got there itself
+      // (moving the body alone would leave its feet behind).
+      const moveSpider = (sp, x, bodyY, z) => {
+        const d = new Vec3(x - sp.body.position.x, bodyY - sp.body.position.y, z - sp.body.position.z);
+        sp.body.position.add(d);
+        sp.body.velocity.set(0, 0, 0);
+        for (const leg of sp.body.legs) {
+          leg.endEffector.add(d);
+          leg.previousEndEffector.add(d);
+          if (leg.target && leg.target.position) leg.target.position.add(d);
+        }
+        sp.renderer.removeAll();   // no long-distance handover between old and new leg entities
+      };
+      const nearYou = (sp) => hdist(sp.body.position, T.player.location);
+      const s = spawnHere("poison");
+      T.tick(5);
+      s.entity.applyDamage(50, { cause: "magic" });   // 500 -> 450: a teleport must keep this
+      check("spawned in the Nether", s.dimension.id === "minecraft:nether");
+      // pushed up through the ceiling onto the roof (y 128)
+      moveSpider(s, s.body.position.x, 128 + s.body.walkGait.stationary.bodyHeight, s.body.position.z);
+      T.tick(10);
+      check("not before a second up there", spiders()[0] === s && s.body.position.y > 126);
+      T.tick(15);
+      check("stuck on the Nether roof while you're below: TELEPORTS down to you",
+        spiders()[0] === s && s.body.position.y < 100 && nearYou(s) <= 7,
+        `same spider: ${spiders()[0] === s}, y ${s.body.position.y.toFixed(1)}, ${nearYou(s).toFixed(1)} blocks from you`);
+      check("the very same spider: variant and health kept, never a kill",
+        s.variant === "poison" && Math.abs(s.realHealth() - 450) < 1e-6 && sm.kills() === 0 && !T.log.some((l) => l.startsWith("item ")),
+        `${s.variant}, ${s.realHealth()} hp`);
+      // wedged INSIDE the bedrock band: lifted out on top (Java's ray-start rule), then teleported down
+      moveSpider(s, s.body.position.x, 125.5, s.body.position.z);
+      T.tick(80);
+      check("wedged in the bedrock ceiling: it ends up back down with you", spiders()[0] === s && s.body.position.y < 118 && nearYou(s) <= 10,
+        `y ${s.body.position.y.toFixed(1)}, ${nearYou(s).toFixed(1)} blocks from you`);
+      // simply OUT OF RANGE in the Nether (past the 80 blocks its hunt gives up at): teleports too
+      moveSpider(s, T.player.location.x + 150, s.body.position.y, T.player.location.z);
+      T.tick(10);
+      check("out of range in the Nether: not in the first second", nearYou(s) > 100);
+      T.tick(15);
+      check("out of range in the Nether: TELEPORTS to you", spiders()[0] === s && nearYou(s) <= 7, `${nearYou(s).toFixed(1)} blocks from you`);
+      // v1.8.6: a spectator is nobody to teleport to; someone in creative is
+      T.player.gameMode = "Spectator";
+      moveSpider(s, T.player.location.x + 150, s.body.position.y, T.player.location.z);
+      T.tick(40);
+      check("a spectator is nobody to teleport to", spiders()[0] === s && nearYou(s) > 100, `${nearYou(s).toFixed(1)} blocks from you`);
+      T.player.gameMode = "Creative";
+      T.tick(25);
+      check("...but a creative player is (it wanders near you instead of getting lost)", spiders()[0] === s && nearYou(s) <= 7, `${nearYou(s).toFixed(1)} blocks from you`);
+      T.player.gameMode = "Survival";
+      // you went up on the roof yourself: it may hunt you there
+      T.player.location = { x: s.body.position.x + 3, y: 128, z: s.body.position.z };
+      moveSpider(s, s.body.position.x, 128 + s.body.walkGait.stationary.bodyHeight, s.body.position.z);
+      T.tick(40);
+      check("with you up on the roof too, it stays up there", spiders()[0] === s && s.body.position.y > 126);
+      // falling out of the BOTTOM of the world is how you kill it: never rescued
+      T.player.location = { x: 0.5, y: F, z: 0.5 };
+      moveSpider(s, 200, -80, 200);
+      T.tick(40);
+      check("falling out of the world is never rescued (that is how you kill it)", spiders()[0] === s && s.body.position.y < -70 && nearYou(s) > 150,
+        `y ${s.body.position.y.toFixed(1)}`);
+      // the OVERWORLD keeps its rules: out of range there is not a teleport
+      T.player.dimension = T.dim;
+      T.tick(110);
+      const o = spiders()[0];
+      check("it followed you back to the Overworld", o && o.dimension.id === "minecraft:overworld");
+      moveSpider(o, T.player.location.x + 150, o.body.position.y, T.player.location.z);
+      T.tick(40);
+      check("out of range in the Overworld: no teleport (Nether only)", spiders()[0] === o && nearYou(o) > 100, `${nearYou(o).toFixed(1)} blocks away`);
+      // the spawn search never puts one in an air pocket inside the bedrock band
+      T.set(70, 123, 0, "bedrock"); T.set(70, 127, 0, "bedrock");
+      for (let y = 124; y <= 126; y++) T.set(70, y, 0, "air");
+      for (let y = F; y < 123; y++) T.set(70, y, 0, "air");
+      const blocks = new BlockWorld(T.nether);
+      check("spawn search never uses an air pocket in the ceiling (the chase's own ground search still sees it)",
+        groundYAt(blocks, 70.5, 0.5, 115, SPAWN_CEILING_MARGIN) === null && groundYAt(blocks, 70.5, 0.5, 115) === 124,
+        `spawn search ${groundYAt(blocks, 70.5, 0.5, 115, SPAWN_CEILING_MARGIN)}, chase search ${groundYAt(blocks, 70.5, 0.5, 115)}`);
+      const bedrock = blocks.cell(70, 123, 0);
+      check("bedrock is solid ground (the '^bed' pattern no longer catches it)", bedrock.id === "bedrock" && bedrock.sturdyTop);
+    } else if (CASE === "ward") {
+      const W = await import("/wards.js");
+      const { world } = await import("@minecraft/server");
+      const R = 40;                                   // a small zone keeps the runs short
+      setConfig("wardRadius", R);
+      const D = "minecraft:overworld";
+      const IX = 3, IZ = 3;                           // the idol, on the floor beside the start
+      const fromIdol = (p) => Math.hypot(p.x - (IX + 0.5), p.z - (IZ + 0.5));
+      const chat = (n) => T.log.slice(n).filter((l) => l.startsWith("chat ")).join(" | ");
+      // placing: it wakes up first
+      let n0 = T.log.length;
+      T.place(IX, F, IZ, "arachno:warding_idol");
+      check("placing one says it is waking, and for how long", /waking: it will be warding 40 blocks in 5 second\(s\)/.test(chat(n0)), chat(n0));
+      check("asleep: it protects nothing yet", W.wardCount() === 1 && !W.isProtected(D, 0.5, 0.5));
+      T.tick(101);
+      check("5 s later it protects (a cylinder: horizontal distance only)", W.isProtected(D, 0.5, 0.5) && W.isProtected(D, IX + 39, IZ) && !W.isProtected(D, IX + 42, IZ));
+      check("saved with the world", JSON.parse(world.getDynamicProperty("arachno:wards")).length === 1);
+      // spacing: too close is handed back, far enough is allowed
+      n0 = T.log.length;
+      T.place(IX + 100, F, IZ, "arachno:warding_idol");
+      const back = T.player.slots.some((s) => s && s.typeId === "arachno:warding_idol");
+      check("100 blocks from another: refused, block gone, idol handed back", W.wardCount() === 1 && T.isSolid(IX + 100, F, IZ) === false && back && /Too close/.test(chat(n0)), chat(n0));
+      T.place(IX + 300, F, IZ, "arachno:warding_idol");
+      check("300 blocks away: allowed", W.wardCount() === 2);
+      T.breakBlock(IX + 300, F, IZ);
+      check("breaking one releases its ground", W.wardCount() === 1);
+      // no spawns while you are warded; they come once you leave - never inside the zone
+      setConfig("spawnMinMinutes", 0.05); setConfig("spawnMaxMinutes", 0.05);
+      // a plain netherite spider (a hunter stalks instead of charging, and would miss the bite window)
+      setConfig("hunterVariantChance", 0); setConfig("poisonVariantChance", 0); setConfig("camoVariantChance", 0);
+      T.tick(400);
+      check("standing inside: no spider spawns", spiders().length === 0, `timer ${sm.respawnTimer}`);
+      T.player.location = { x: IX + 120.5, y: F, z: IZ + 0.5 };
+      for (let t = 0; t < 200 && spiders().length === 0; t++) T.tick(1);
+      const s = spiders()[0];
+      check("outside: it spawns, and not inside the zone", !!s && fromIdol(s.entity.location) > R, s ? `spawned ${fromIdol(s.entity.location).toFixed(1)} from the idol` : "none");
+      // a player in the last block of the edge is fair game; one deeper in is invisible to it
+      // (the spawn side is random, so bring the spider round to just outside the edge first)
+      if (s) { s.teleportTo({ x: IX + 0.5 + R + 10, y: F, z: IZ + 0.5 }); T.tick(1); }
+      T.player.location = { x: IX + 0.5 + R - 0.5, y: F, z: IZ + 0.5 };   // 0.5 inside the edge
+      let bites0 = T.player.bites, minD = Infinity;
+      for (let t = 0; t < 300; t++) { T.tick(1); minD = Math.min(minD, fromIdol(s.body.position)); }
+      check("in the bite band (0.5 inside the edge): hunted and bitten", T.player.bites > bites0, `${T.player.bites - bites0} bites`);
+      check("its body never gets more than 1 block past the edge", minD >= R - 1 - 1e-3, `closest ${minD.toFixed(3)} (fence at ${R - 1})`);
+      T.player.location = { x: IX + 0.5 + R - 6, y: F, z: IZ + 0.5 };     // 6 inside: safe
+      T.tick(20);
+      bites0 = T.player.bites; minD = Infinity;
+      let chased = 0;
+      for (let t = 0; t < 200; t++) { T.tick(1); if (s.ai.isChasing()) chased++; minD = Math.min(minD, fromIdol(s.body.position)); }
+      check("6 blocks inside: no hunt, no bite", T.player.bites === bites0 && chased === 0, `${T.player.bites - bites0} bites, chasing ${chased} ticks`);
+      check("...and it still stays out", minD >= R - 1 - 1e-3, `closest ${minD.toFixed(3)}`);
+      // caught INSIDE (summoned there): it runs straight out, away from the idol
+      T.player.location = { x: IX + 0.5, y: F, z: IZ + 0.5 + 10 };
+      const r = spawnHere();
+      T.tick(2);
+      const start = fromIdol(r.body.position);
+      let sawRepel = false, outAt = -1;
+      const trail = [];
+      for (let t = 0; t < 400 && outAt < 0; t++) { T.tick(1); if (t % 5 === 0) trail.push(fromIdol(r.body.position).toFixed(1)); if (r.ai.mode === "REPEL") sawRepel = true; if (fromIdol(r.body.position) > R) outAt = t; }
+      check("summoned inside: it REPELs straight out of the zone", sawRepel && outAt > 0, `started ${start.toFixed(1)} from the idol, out after ${outAt} ticks: ${trail.join(" ")}`);
+      check("leaving never counted as a kill", sm.kills() === 0);
+      // the ENRAGED boss: no fence, and it blows the idol apart within 16 blocks of its feet
+      setConfig("wardEnabled", true);
+      T.player.location = { x: IX + 0.5 + 25, y: F, z: IZ + 0.5 };
+      const b = spawnHere();
+      T.tick(2);
+      T.interact(b.entity, "minecraft:netherite_ingot");
+      T.tick(2);
+      T.player.location = { x: IX + 0.5 + 3, y: F, z: IZ + 0.5 };       // deep inside the zone
+      n0 = T.log.length;
+      let gone = -1, deepest = Infinity;
+      for (let t = 0; t < 400 && gone < 0; t++) { T.tick(1); deepest = Math.min(deepest, fromIdol(b.body.position)); if (W.wardCount() === 0) gone = t; }
+      check("the enraged boss walks straight through the fence", b.enraged && deepest < R - 1.5, `got within ${deepest.toFixed(1)} of the idol`);
+      check("...and blows the idol apart (no block, no drop, everyone told)",
+        gone >= 0 && !T.isSolid(IX, F, IZ) && /blew apart the Warding Idol/.test(chat(n0)) && !T.log.slice(n0).some((l) => l.startsWith("item ")), chat(n0));
+      setConfig("wardEnabled", false);
+      T.place(IX + 600, F, IZ, "arachno:warding_idol");
+      T.tick(120);
+      check("wardEnabled false: an idol protects nothing", !W.isProtected(D, IX + 600.5, IZ + 0.5));
+    } else if (CASE === "laser") {
+      const W = await import("/wards.js");
+      const hud = (n) => T.log.slice(n).filter((l) => l.startsWith("hud ")).join(" | ");
+      const aimAt = (x, y, z) => {
+        const e = T.player.getHeadLocation();
+        const d = Math.hypot(x - e.x, y - e.y, z - e.z);
+        T.setView({ x: (x - e.x) / d, y: (y - e.y) / d, z: (z - e.z) / d });
+      };
+      let n0 = T.log.length;
+      T.useItem("arachno:spider_laser_pointer");
+      check("survival: refused", /creative-mode-only/.test(hud(n0)), hud(n0));
+      T.player.gameMode = "Creative";
+      n0 = T.log.length;
+      aimAt(-12.5, F, 0.5);
+      T.useItem("arachno:spider_laser_pointer");
+      check("no spider about: says so", /Nothing is around/.test(hud(n0)), hud(n0));
+      T.player.gameMode = "Survival";
+      T.setView({ x: 1, y: 0, z: 0 });
+      const s = spawnHere();
+      T.tick(40);
+      check("it is hunting you", s.ai.isChasing());
+      T.player.gameMode = "Creative";
+      n0 = T.log.length;
+      aimAt(-14.5, F, 0.5);                       // a spot on the floor behind you
+      T.useItem("arachno:spider_laser_pointer");
+      T.tick(1);
+      const dot = { x: -14.5, z: 0.5 };
+      check("the dot pulls it off the chase", /fixes on the dot/.test(hud(n0)) && s.ai.mode === "LURE" && !s.ai.isChasing(), `${hud(n0)}; mode ${s.ai.mode}`);
+      // back to survival while the dot shines: a creative player is never bitten or hunted anyway
+      // (v1.8.6), so only a survival one shows the lure really holds the bite back
+      T.player.gameMode = "Survival";
+      const bites0 = T.player.bites;
+      let closest = Infinity;
+      for (let t = 0; t < 75; t++) { T.tick(1); closest = Math.min(closest, Math.hypot(s.body.position.x - dot.x, s.body.position.z - dot.z)); }
+      check("it scurries to the dot", closest < 2, `got within ${closest.toFixed(2)} blocks`);
+      check("...and never bites while distracted", T.player.bites === bites0);
+      T.tick(60);
+      check("dot gone: it comes back for you", s.ai.isChasing() || s.ai.mode === "ALERT", `mode ${s.ai.mode}`);
+      // a dot deep inside a Warding Idol's zone draws it only as far as the fence
+      T.player.gameMode = "Survival";
+      setConfig("wardRadius", 20);
+      T.place(-40, F, 0, "arachno:warding_idol");
+      T.tick(110);
+      T.player.gameMode = "Creative";
+      aimAt(-40.5, F, 4.5);                        // 4 blocks from the idol: deep inside
+      let nearIdol = Infinity;
+      for (let t = 0; t < 160; t++) {
+        if (t % 70 === 0) T.useItem("arachno:spider_laser_pointer");
+        T.tick(1);
+        nearIdol = Math.min(nearIdol, Math.hypot(s.body.position.x - (-39.5), s.body.position.z - 0.5));
+      }
+      check("a dot inside a ward draws it only to the fence", W.wardCount() === 1 && nearIdol >= 19 - 1e-3, `closest ${nearIdol.toFixed(3)} to the idol (fence at 19)`);
+    } else if (CASE === "debug") {
+      const D = await import("/debug.js");
+      const { Quat, Vec3, FORWARD, toRadians } = await import("/engine/vec.js");
+      const { world } = await import("@minecraft/server");
+      const boxes = () => live("arachno:debug");
+      const shown = () => boxes().filter((e) => e.props["arachno:sx"] > 0);
+      const centre = (e) => new Vec3(e.location.x + e.props["arachno:x"], e.location.y + e.props["arachno:y"], e.location.z + e.props["arachno:z"]);
+      const turn = (e) => Quat.rotationYXZ(toRadians(e.props["arachno:a"]), toRadians(e.props["arachno:p"]), toRadians(e.props["arachno:r"]));
+      /** The two ends of a bar box along its own Z. */
+      const ends = (e) => {
+        const half = FORWARD().rotate(turn(e)).mul(e.props["arachno:sz"] / 2);
+        return [centre(e).sub(half), centre(e).add(half)];
+      };
+      const near = (a, b, eps = 1e-3) => a.distance(b) < eps;
+      const rp = async (p) => (await fetch(`/rp/${p}`)).json();
+      const plainText = (s) => String(s).replace(/^hud /, "").replace(/§./g, "");
+      // the switch: operators only, and it says what everything means
+      T.player.commandPermissionLevel = 0;
+      let r = T.command("arachno:spider", "debug");
+      check("/spider debug refused for a non-operator", r.status === 1 && !D.DEBUG.enabled, r.message);
+      T.player.commandPermissionLevel = 1;
+      r = T.command("arachno:spider", "debug");
+      check("an operator switches it on, with the legend", r.status === 0 && D.DEBUG.enabled && r.message === D.LEGEND, r.message.slice(0, 40));
+      // it draws a spider part for part, at the engine's own values
+      const s = spawnHere();
+      T.tick(1);
+      const box = (key) => s.renderer.debug.get(key);
+      let parts = D.debugParts(s.body);
+      check("one box per part (8 legs x 5 + facing + 3 axes + polygon + centre of mass + normal force)",
+        boxes().length === parts.size && parts.size >= 40 + 4, `${boxes().length} boxes, ${parts.size} parts`);
+      // mismatches between every box and its part, over a walk that re-parks
+      let worst = 0, worstKey = "", missing = 0, extra = 0, reparks = 0, lastAnchor = s.renderer.anchor;
+      T.player.location = { x: 70.5, y: F, z: 0.5 };
+      for (let t = 0; t < 160; t++) {
+        T.tick(1);
+        if (s.renderer.anchor !== lastAnchor) { reparks++; lastAnchor = s.renderer.anchor; }
+        parts = D.debugParts(s.body);
+        for (const [key, part] of parts) {
+          const e = box(key);
+          if (!e || !e.isValid) { missing++; continue; }
+          const d = centre(e).distance(new Vec3(part.x, part.y, part.z)) +
+            Math.abs(e.props["arachno:sx"] - part.sx) + Math.abs(e.props["arachno:sy"] - part.sy) + Math.abs(e.props["arachno:sz"] - part.sz) +
+            Math.abs(e.props["arachno:a"] - part.a) + Math.abs(e.props["arachno:p"] - part.p) + Math.abs(e.props["arachno:r"] - part.r) +
+            (e.props["arachno:tex"] !== part.tex || e.props["arachno:bright"] !== part.bright || e.props["arachno:snap"] !== part.snap ? 1 : 0);
+          if (d > worst) { worst = d; worstKey = key; }
+        }
+        for (const [key, e] of s.renderer.debug) if (!parts.has(key) && e.props["arachno:sx"] > 0) extra++;
+      }
+      check("every box shows its part exactly, every tick of a 160-tick run", missing === 0 && extra === 0 && worst < 1e-3,
+        `worst ${worst.toExponential(2)} at ${worstKey}, ${missing} missing, ${extra} stale`);
+      check("...across a re-park, like the legs", reparks >= 1, `${reparks} re-parks`);
+      const gaitLines = T.log.filter((l) => l.startsWith("hud ") && l.includes("gait")).map(plainText);
+      const GAIT_RE = /^gait {2}size [\d.]+ {2}[\d.]+ b\/s {2}steps [\d.]+\/s {2}red \d+% {2}air \d+% {2}slide [\d.]+ b\/s {2}drag [\d.]+$/;
+      const busiest = gaitLines.reduce((best, l) => (Number((l.match(/steps ([\d.]+)\/s/) || [])[1]) > Number((best.match(/steps ([\d.]+)\/s/) || [])[1] || -1) ? l : best), "");
+      check("the debug view's gait line: steps, red legs, feet in the air, slides (the simulator's numbers)",
+        gaitLines.length >= 10 && gaitLines.every((l) => GAIT_RE.test(l)) && Number((busiest.match(/steps ([\d.]+)\/s/) || [])[1]) > 0.5,
+        `while walking: ${busiest}`);
+      check("boxes are parked, never moved", boxes().every((e) => e.teleports === 0));
+      // Java's placements, checked against the engine directly
+      const body = s.body, scale = body.bodyPlan.scale, leg = body.legs[0];
+      const foot = box("endEffector0");
+      check("foot: a 0.15-scale cube on the end effector", near(centre(foot), leg.endEffector) && Math.abs(foot.props["arachno:sx"] - 0.15 * scale) < 1e-3 &&
+        foot.props["arachno:a"] === 0 && [2, 3, 4, 6].includes(foot.props["arachno:tex"]));
+      const [b0, b1] = ends(box("scanBar0"));
+      check("scan bar: from the scan start along the scan vector, 0.05 scale thick",
+        near(b0, leg.scanStartPosition) && near(b1, leg.scanStartPosition.copy().add(leg.scanVector)) && Math.abs(box("scanBar0").props["arachno:sx"] - 0.05 * scale) < 1e-3,
+        `${b0.distance(leg.scanStartPosition).toExponential(1)} / ${b1.distance(leg.scanStartPosition.copy().add(leg.scanVector)).toExponential(1)}`);
+      const zv = box("triggerZoneVertical0"), zh = box("triggerZoneHorizontal0");
+      const yaw = body.orientation.getEulerAnglesYXZ().y * 180 / Math.PI;
+      check("trigger zone post: on the zone centre, 2 x vertical tall, turned by the body's yaw only",
+        near(centre(zv), leg.triggerZone.center) && Math.abs(zv.props["arachno:sy"] - 2 * leg.triggerZone.vertical) < 1e-3 &&
+        Math.abs(zv.props["arachno:p"]) < 1e-3 && Math.abs(zv.props["arachno:r"]) < 1e-3 && Math.abs(((zv.props["arachno:a"] - yaw + 540) % 360) - 180) < 1e-3);
+      const zy = Math.min(Math.max(leg.target.position.y, leg.triggerZone.center.y - leg.triggerZone.vertical), leg.triggerZone.center.y + leg.triggerZone.vertical);
+      check("trigger zone square: 2 x horizontal wide, 0.02 thick, at the step target's height clamped into the zone",
+        Math.abs(centre(zh).y - zy) < 1e-3 && Math.abs(zh.props["arachno:sx"] - 2 * leg.triggerZone.horizontal) < 1e-3 && zh.props["arachno:sy"] === 0.02 &&
+        [8, 9].includes(zh.props["arachno:tex"]));
+      const tgt = box("targetPosition0");
+      check("step target: a 0.2-scale glass cube, lime when grounded", near(centre(tgt), leg.target.position) &&
+        Math.abs(tgt.props["arachno:sx"] - 0.2 * scale) < 1e-3 && tgt.props["arachno:tex"] === (leg.target.isGrounded ? 10 : 9));
+      const dir = box("direction");
+      check("facing nub: 1 scale ahead along the body's orientation, emerald (redstone at a gallop)",
+        near(centre(dir), FORWARD().rotate(body.orientation).mul(scale).add(body.position)) && dir.props["arachno:tex"] === (body.gallop ? 4 : 5));
+      const [f0, f1] = ends(box("preferredForwards"));
+      const th = 0.025 * scale;
+      check("preferred forward axis: from the body 2 scale (+thickness) along the preferred orientation, world-lit",
+        near(f0, body.position) && near(f1, FORWARD().rotate(body.preferredOrientation).mul(2 * scale + th).add(body.position)) &&
+        box("preferredForwards").props["arachno:bright"] === false && box("preferredRight").props["arachno:bright"] === false && box("preferredUp").props["arachno:bright"] === false);
+      const polygon = [...s.renderer.debug.keys()].filter((k) => k.startsWith("polygon") && box(k).props["arachno:sx"] > 0);
+      const grounded = body.legs.filter((l) => l.isGrounded()).length;
+      check("support polygon: one emerald edge per planted foot, snapping", body.normal && polygon.length === (grounded > 1 ? grounded : 0) &&
+        polygon.every((k) => box(k).props["arachno:snap"] === true && box(k).props["arachno:tex"] === 5), `${polygon.length} edges, ${grounded} planted`);
+      check("everything else is full-bright and glides", [...s.renderer.debug].every(([k, e]) =>
+        k.startsWith("preferred") ? !e.props["arachno:bright"] : e.props["arachno:bright"] && (k.startsWith("polygon") || !e.props["arachno:snap"])));
+      // THE CLIENT: replay the real resource-pack files (smoothing script + bones) at 60 fps, with
+      // client.html's conventions (bone Y +v = Ry(+v), X +v = Rx(-v), Z +v = Rz(-v); the engine
+      // draws Ry(180 - bodyYaw) o MirrorX; 16 px a block) - the ones the legs were confirmed with.
+      {
+        const { compile, channel } = await import("/test/molang.js");
+        const sc = (await rp("entity/debug.entity.json"))["minecraft:client_entity"].description.scripts;
+        const init = sc.initialize.map(compile), pre = sc.pre_animation.map(compile);
+        const bones = (await rp("animations/debug.animation.json")).animations["animation.arachno_debug.pose"].bones;
+        const rad = (d) => d * Math.PI / 180;
+        const Ry = (deg, v) => v.copy().rotate(Quat.rotY(rad(deg)));
+        const Rx = (deg, v) => v.copy().rotate(Quat.rotX(rad(deg)));
+        const Rz = (deg, v) => v.copy().rotate(Quat.rotZ(rad(deg)));
+        const Mx = (v) => new Vec3(-v.x, v.y, v.z);
+        const SIGNS = [];
+        for (const i of [-1, 1]) for (const j of [-1, 1]) for (const k of [-1, 1]) SIGNS.push([i, j, k]);
+        const drawn = (c) => {
+          const P = channel(bones.off.position, c), rootY = channel(bones.root.rotation, c)[1];
+          const yawV = channel(bones.yaw.rotation, c)[1], pitchV = channel(bones.pitch.rotation, c)[0], rollV = channel(bones.roll.rotation, c)[2];
+          const S = channel(bones.box.scale, c);
+          return SIGNS.map(([i, j, k]) => {
+            let v = Ry(yawV, Rx(-pitchV, Rz(-rollV, new Vec3(8 * i * S[0], 8 * j * S[1], 8 * k * S[2])))).add(new Vec3(P[0], P[1], P[2]));
+            v = Ry(180 - c.bodyYaw, Mx(Ry(rootY, v)));
+            return new Vec3(c.position.x + v.x / 16, c.position.y + v.y / 16, c.position.z + v.z / 16);
+          });
+        };
+        const wanted = (e) => {
+          const p = e.props, q = turn(e), mid = centre(e);
+          return SIGNS.map(([i, j, k]) => new Vec3(i * p["arachno:sx"] / 2, j * p["arachno:sy"] / 2, k * p["arachno:sz"] / 2).rotate(q).add(mid));
+        };
+        const mean = (pts) => pts.reduce((a, b) => a.add(b), new Vec3()).mul(1 / pts.length);
+        const clients = new Map();
+        let cornerErr = 0, errKey = "", movingTicks = 0, glidingFrames = 0, errors = 0, landed = 0;
+        T.player.location = { x: 20.5, y: F, z: 30.5 };   // off it goes again
+        for (let t = 0; t < 60; t++) {
+          T.tick(1);
+          for (const [key, e] of s.renderer.debug) {
+            let c = clients.get(e.id);
+            const fresh = !c;
+            if (fresh) { c = { v: {}, props: {}, position: e.location, deltaTime: 1 / 60, bodyYaw: e.rotation.y }; init.forEach((f) => f(c)); clients.set(e.id, c); }
+            const moved = !fresh && c.lastProp && centre(e).distance(c.lastProp) > 1e-4 && !e.props["arachno:snap"];
+            c.props = { ...e.props };
+            c.lastProp = centre(e);
+            let frames = 0;
+            for (let f = 0; f < 3; f++) {
+              pre.forEach((fn) => fn(c));
+              const corners = drawn(c), mid = mean(corners);
+              if (c.lastDrawn && mid.distance(c.lastDrawn) > 1e-6) frames++;
+              c.lastDrawn = mid;
+              // Once its glide has landed (normally the 3rd frame; a part that paused for a tick or
+              // two first glides a little longer - the legs' adaptive glide), it must be exact.
+              if (e.props["arachno:sx"] > 0 && c.v["v.al"] >= 1) {
+                landed++;
+                const want = wanted(e);
+                const err = Math.max(...corners.map((pt) => Math.min(...want.map((w) => pt.distance(w)))));
+                if (err > cornerErr) { cornerErr = err; errKey = key; }
+              }
+            }
+            if (moved) { movingTicks++; glidingFrames += frames; }
+            if (c.errors) errors += [...c.errors.values()].reduce((a, b) => a + b, 0);
+          }
+        }
+        check("client: every box drawn exactly where its part is (all 8 corners) once its glide lands", cornerErr < 1e-4 && landed > 1000,
+          `worst ${cornerErr.toExponential(2)} at ${errKey}, ${landed} frames checked`);
+        check("client: moving parts glide (move on all 3 frames of a 60 fps tick), like the legs",
+          movingTicks > 100 && glidingFrames / (3 * movingTicks) > 0.95, `${(100 * glidingFrames / (3 * movingTicks)).toFixed(1)}% of ${movingTicks} moving ticks`);
+        check("client: no Molang errors", errors === 0, `${errors}`);
+      }
+      // off: gone at once (the legs stay); on again: back
+      r = T.command("arachno:spider", "debug");
+      T.tick(1);
+      check("off: every box removed, legs untouched", r.message === "Spider debug view OFF." && boxes().length === 0 && s.renderer.liveCount() === 8, `${boxes().length} boxes, ${s.renderer.liveCount()} live legs (+${live("arachno:leg").length - s.renderer.liveCount()} retiring)`);
+      T.command("arachno:spider", "debug");
+      T.tick(1);
+      check("on again: drawn again", shown().length === D.debugParts(s.body).size);
+      // a giant personal spider: drawn too, never an out-of-range write, all gone on release
+      T.player.gameMode = "Creative";
+      T.command("arachno:spider", "newinstance", 20);
+      T.tick(40);
+      const personalBoxes = boxes().length - s.renderer.debug.size;
+      check("a personal spider (size 20) gets the view too", personalBoxes >= 44, `${personalBoxes} boxes`);
+      T.command("arachno:spider", "release");
+      T.tick(1);
+      check("released: its boxes go with it", boxes().length === s.renderer.debug.size);
+      T.player.gameMode = "Survival";
+      // nobody drawing it: swept like a stray leg
+      const stray = world.getDimension("minecraft:overworld").spawnEntity("arachno:debug", { x: 5, y: F, z: 5 });
+      T.tick(200);
+      check("a stray debug box (left over from a crash, say) is swept", !stray.isValid);
+      // the client files agree with the script
+      const ent = (await rp("entity/debug.entity.json"))["minecraft:client_entity"].description;
+      const anim = await rp("animations/debug.animation.json");
+      const rc = (await rp("render_controllers/debug.render_controllers.json")).render_controllers;
+      const bp = (await (await fetch("/bp/entities/debug.json")).json())["minecraft:entity"].description.properties;
+      check("textures d0..d10 are debug.js's palette, in order", D.DEBUG_TEXTURES.every((t, i) => ent.textures[`d${i}`] === t) &&
+        Object.values(rc).every((c) => c.arrays.textures["Array.skins"].length === D.DEBUG_TEXTURES.length));
+      const molang = JSON.stringify([ent.scripts.pre_animation, anim, rc]);
+      const declared = new Set(ent.scripts.initialize.map((l) => l.match(/^(v\.\w+) =/)[1]));
+      const read = new Set(molang.match(/\bv\.\w+/g));
+      const undeclared = [...read].filter((v) => !declared.has(v));
+      check("every Molang variable is declared in initialize", undeclared.length === 0, undeclared.join(","));
+      const used = new Set([...molang.matchAll(/q\.property\('([^']+)'\)/g)].map((m) => m[1]));
+      const unknown = [...used].filter((p) => !bp[p]);
+      check("every property the client reads exists (and under the 32-per-entity cap)", unknown.length === 0 && Object.keys(bp).length <= 32, unknown.join(","));
+    } else if (CASE === "menu") {
+      const { ui, plain } = await import("@minecraft/server-ui");
+      const M = await import("/menu.js");
+      const { SPEC, CATEGORIES } = await import("/config.js");
+      const { world } = await import("@minecraft/server");
+      const BOOK = "arachno:spider_config_book";
+      const settle = ui.settle;
+      const books = () => T.player.slots.filter((s) => s && s.typeId === BOOK).length;
+      const body = () => plain(ui.open && ui.open.body);
+      const chats = (n) => T.log.slice(n).filter((l) => l.startsWith("chat ")).map(plain).join(" | ");
+      // the groups
+      const listed = CATEGORIES.flatMap(([, keys]) => keys);
+      check("every setting in exactly one of Java's 8 categories, in Java's order",
+        listed.length === Object.keys(SPEC).length && new Set(listed).size === listed.length && listed.every((k) => k in SPEC) &&
+        CATEGORIES.map((c) => c[0]).join("|") === "Spawning|Warding Idol|Tools & items|Chase & speed|Wandering|Size & growth|Combat & drops|Variant sounds",
+        `${listed.length} listed of ${Object.keys(SPEC).length}`);
+      check("names read like Java's book", M.pretty("spawnMinMinutes") === "Spawn Min Minutes" && M.pretty("netheriteAttackDamageHearts") === "Netherite Attack Damage Hearts");
+      // first join: one book for an operator, once ever
+      let n0 = T.log.length;
+      T.join(); T.tick(1);
+      check("first join: an operator gets one Spider Config Book, and is told what it is", books() === 1 && /You got a Spider Config Book/.test(chats(n0)), chats(n0));
+      T.join(); T.tick(1);
+      check("...never a second", books() === 1);
+      // the book opens the menu
+      T.useItem(BOOK); await settle();
+      let f = ui.open;
+      const names = f ? f.buttons.map((b) => plain(b.text).split("\n")[0]) : [];
+      check("using the book opens the menu: the 8 groups, Find a setting, Reset ALL, Done",
+        f && f.kind === "action" && plain(f.title) === "ArachnoMod Settings" && names.join("|") === CATEGORIES.map((c) => c[0]).concat(["Find a setting", "Reset ALL", "Done"]).join("|"), names.join(", "));
+      check("...each group says how many settings it has", plain(f.buttons[0].text) === "Spawning\n17 settings" && /Every setting is at its default/.test(body()), plain(f.buttons[0].text));
+      // a page
+      ui.click("Chase & speed"); await settle();
+      f = ui.open;
+      check("a page: a text box per number holding its value, a toggle per switch, then 'reset this page'",
+        f.kind === "modal" && f.controls.length === 9 && f.controls[0].type === "textField" && f.controls[0].value === "64" &&
+        f.controls[3].type === "toggle" && f.controls[3].value === false && /Reset every setting on this page/.test(plain(f.controls[8].label)) && plain(f.submit) === "Save");
+      check("...every setting described, with its default and range on hover",
+        plain(f.controls[0].label) === `Chase Distance\n${SPEC.chaseDistance[3]}` && /Default 64, 8 to 256\. Empty the box to reset it\./.test(f.controls[0].tooltip), f.controls[0].tooltip);
+      n0 = T.log.length;
+      ui.submit({ "Chase Distance": "100", "Alert Reaction Ticks": "abc", "Hostile Only At Night": true, "Leg Step Speed": "99" }); await settle();
+      check("Save: good values saved, bad ones refused (the same checks as /spiderconfig)",
+        CONFIG.chaseDistance === 100 && CONFIG.hostileOnlyAtNight === true && CONFIG.alertReactionTicks === 10 && CONFIG.legStepSpeed === 1.1);
+      f = ui.open;
+      check("...back on the menu with the outcome at the top (and in chat)",
+        f && f.kind === "action" && /Saved: chaseDistance = 100, hostileOnlyAtNight = on/.test(body()) &&
+        /Not changed: alertReactionTicks needs a number; legStepSpeed must be between 0.1 and 5/.test(body()) && /Saved: chaseDistance = 100/.test(chats(n0)), body().split("\n").slice(0, 3).join(" / "));
+      check("...saved with the world", JSON.parse(world.getDynamicProperty("arachno:config")).chaseDistance === 100);
+      check("...and the group counts its changes", plain(f.buttons[3].text) === "Chase & speed\n8 settings, 2 changed" && /2 setting\(s\) differ/.test(body()), plain(f.buttons[3].text));
+      ui.click("Chase & speed"); await settle(); f = ui.open;
+      check("changed settings are named in yellow", f.controls[0].label.startsWith("§e") && !f.controls[1].label.startsWith("§e") && f.controls[3].label.startsWith("§e"));
+      ui.submit({ "Chase Distance": "" }); await settle();
+      check("emptying a box resets that setting", CONFIG.chaseDistance === 64 && CONFIG.hostileOnlyAtNight === true && /Reset to default: chaseDistance/.test(body()), body().split("\n")[0]);
+      ui.click("Chase & speed"); await settle();
+      ui.submit({ "Reset every setting on this page": true, "Chase Distance": "200" }); await settle();
+      check("'reset this page' puts the whole page back (whatever else was typed)", CONFIG.hostileOnlyAtNight === false && CONFIG.chaseDistance === 64, body().split("\n")[0]);
+      ui.click("Chase & speed"); await settle();
+      ui.submit({}); await settle();
+      check("saving an untouched page changes nothing", /Nothing changed/.test(body()));
+      // a value set more finely by command survives an untouched save
+      setConfig("wanderPauseChance", 1 / 3);
+      ui.click("Wandering"); await settle(); ui.submit({}); await settle();
+      check("...even one the page shows rounded", CONFIG.wanderPauseChance === 1 / 3 && /Nothing changed/.test(body()));
+      setConfig("wanderPauseChance", 0.25);
+      ui.click("Wandering"); await settle(); ui.close(); await settle();
+      check("closing a page goes back to the menu", ui.open && ui.open.kind === "action");
+      // a change re-arms the spawn timer, like /spiderconfig (Java v1.3.2)
+      const before = sm.respawnTimer;
+      ui.click("Spawning"); await settle(); ui.submit({ "Spawn Min Minutes": "0.5", "Spawn Max Minutes": "0.5" }); await settle();
+      check("a spawn-timing change re-arms the countdown", before > 600 && sm.respawnTimer <= 601, `${before} -> ${sm.respawnTimer}`);
+      ui.click("Spawning"); await settle(); ui.submit({ "Reset every setting on this page": true }); await settle();
+      ui.click("Combat & drops"); await settle(); ui.submit({ "Netherite Legs": "6.6" }); await settle();
+      check("whole-number settings are rounded, as by command", CONFIG.netheriteLegs === 7, `${CONFIG.netheriteLegs}`);
+      // find a setting
+      ui.click("Find a setting"); await settle(); ui.submit({ "Search settings": "ward" }); await settle();
+      f = ui.open;
+      const found = f.controls.slice(0, -1).map((c) => plain(c.label).split("\n")[0]);
+      check("Find a setting: 'ward' brings up the Warding Idol settings on one page",
+        f.kind === "modal" && plain(f.title) === 'Settings matching "ward"' && ["Ward Enabled", "Ward Radius", "Ward Min Spacing", "Ward Arming Seconds"].every((x) => found.includes(x)), found.join(", "));
+      ui.submit({ "Ward Radius": "64" }); await settle();
+      check("...and edits them like any page", CONFIG.wardRadius === 64);
+      ui.click("Find a setting"); await settle(); ui.submit({ "Search settings": "zzz" }); await settle();
+      check("nothing found: says so", /No settings match "zzz"/.test(body()));
+      // Reset ALL
+      ui.click("Reset ALL"); await settle();
+      check("Reset ALL asks first", ui.open.kind === "message" && /Reset ALL spider settings\?/.test(plain(ui.open.title)) && /cannot be undone/.test(body()));
+      ui.click("Cancel"); await settle();
+      check("...Cancel changes nothing", CONFIG.wardRadius === 64 && ui.open.kind === "action");
+      ui.click("Reset ALL"); await settle(); ui.click("Reset ALL"); await settle();
+      check("...Reset ALL puts every setting back", Object.keys(SPEC).every((k) => CONFIG[k] === SPEC[k][0]) && /Reset 2 setting\(s\) to their defaults/.test(body()), body().split("\n")[0]);
+      ui.click("Done"); await settle();
+      check("Done closes it", ui.open === null);
+      // /spider menu from chat: the chat screen is still closing, so the first tries come back busy
+      ui.busy = 3;
+      const r = T.command("arachno:spider", "menu");
+      for (let i = 0; i < 40 && !ui.open; i++) { T.tick(1); await settle(); }
+      check("/spider menu opens it once the chat screen has closed", r.status === 0 && ui.open && plain(ui.open.title) === "ArachnoMod Settings" && ui.busy === 0, r.message);
+      ui.close(); await settle();
+      check("closing the menu closes it", ui.open === null);
+      // a guest may look, not touch
+      T.player.playerPermissionLevel = 1; T.player.commandPermissionLevel = 0;
+      T.useItem(BOOK); await settle(); f = ui.open;
+      check("a guest gets it read-only, without Reset ALL", /Read only: only operators can change these settings/.test(body()) && !f.buttons.some((b) => plain(b.text).startsWith("Reset ALL")));
+      ui.click("Warding Idol"); await settle();
+      check("...a group is a list: value, default, range and description", ui.open.kind === "action" &&
+        /Ward Radius: 128 {2}\(default 128, 8 to 512\)\nHow far a Warding Idol reaches/.test(body()) && /^Ward Enabled: on {2}\(default on\)\nAre WARDING IDOLS active/.test(body()), body().slice(0, 120));
+      ui.click("Back"); await settle(); ui.click("Done"); await settle();
+      check("...and a guest's save is refused", /Only operators/.test(M.applyPage(T.player, ["wardRadius"], ["64", false])) && CONFIG.wardRadius === 128 &&
+        /Only operators/.test(M.resetAll(T.player)));
+      T.player.tags = [];
+      T.join(); T.tick(1);
+      check("...nor does a guest get a book on joining", books() === 1);
+      T.player.playerPermissionLevel = 2; T.player.commandPermissionLevel = 1;
+      setConfig("giveConfigBook", false);
+      T.join(); T.tick(1);
+      check("giveConfigBook false: no book", books() === 1);
+      setConfig("giveConfigBook", true);
+      T.join(); T.tick(1);
+      check("giveConfigBook true again: a new operator gets theirs", books() === 2);
+      check("no form misuse", ui.errors.length === 0 && ui.open === null, ui.errors.join("; "));
+    } else if (CASE === "creative") {
+      // Java v1.8.6: like vanilla mobs, nobody in creative or spectator is hunted
+      const s = spawnHere();
+      T.tick(60);
+      check("a wild spider hunts a SURVIVAL player", s.ai.isChasing());
+      const watch = (ticks) => { let chasing = 0; const bites0 = T.player.bites; for (let t = 0; t < ticks; t++) { T.tick(1); if (t > 1 && s.ai.isChasing()) chasing++; } return { chasing, bites: T.player.bites - bites0 }; };
+      T.player.gameMode = "Creative";
+      let w = watch(130);
+      check("...stops the moment they go CREATIVE and wanders (no chase, no bite)", w.chasing === 0 && w.bites === 0 && s.ai.mode !== "ALERT", `${w.chasing} ticks chasing, ${w.bites} bites, mode ${s.ai.mode}`);
+      // (it wanders off, ignoring you: walk alongside it)
+      for (let t = 0; t < 60; t++) { T.player.location = { x: s.body.position.x + 2, y: F, z: s.body.position.z }; T.tick(1); }
+      check("...but still shrinks near a creative player (it looks right while you build)", s.scale < 0.8, `size ${s.scale.toFixed(2)}`);
+      T.player.gameMode = "Spectator";
+      w = watch(90);
+      check("...ignores a SPECTATOR too", w.chasing === 0 && w.bites === 0, `${w.chasing} ticks chasing`);
+      T.player.gameMode = "Survival";
+      T.tick(40);
+      check("...and hunts them again back in survival", s.ai.isChasing() || s.ai.mode === "ALERT", `mode ${s.ai.mode}`);
+      // the hunter's blindness skips creative players
+      T.player.location = { x: 0.5, y: F, z: 0.5 };
+      T.setView({ x: 1, y: 0, z: 0 });
+      const h = spawnHere("hunter");
+      T.setView({ x: -1, y: 0, z: 0 });   // looking away: the hunter may stalk
+      T.player.gameMode = "Creative";
+      T.player.effects.length = 0;
+      T.tick(120);
+      check("the hunter never blinds a creative player", !T.player.effects.some((e) => e.type === "blindness") && !h.ai.isChasing(), `mode ${h.ai.mode}`);
+      T.player.gameMode = "Survival";
+      for (let t = 0; t < 200 && !T.player.effects.some((e) => e.type === "blindness"); t++) T.tick(1);
+      check("...but does a survival one", T.player.effects.some((e) => e.type === "blindness"));
+      // a TAMED spider still follows its creative owner (a pet), never a spectator
+      T.setView({ x: 1, y: 0, z: 0 });
+      T.player.gameMode = "Creative";
+      const p = spawnHere();
+      T.tick(2);
+      T.interact(p.entity, "arachno:spider_tamer");
+      T.tick(2);
+      check("tamed: whoever used the Tamer is its owner", p.tamed && p.ownerId === T.player.id);
+      T.player.location = { x: p.body.position.x - 16, y: F, z: p.body.position.z };
+      let closest = Infinity;
+      for (let t = 0; t < 120; t++) { T.tick(1); closest = Math.min(closest, hdist(p.body.position, T.player.location)); }
+      check("a TAMED spider still follows its creative owner around", closest < 5, `got within ${closest.toFixed(1)} blocks`);
+      T.player.gameMode = "Spectator";
+      T.player.location = { x: p.body.position.x - 16, y: F, z: p.body.position.z };
+      let following = 0;
+      for (let t = 0; t < 80; t++) { T.tick(1); if (t > 1 && p.ai.isChasing()) following++; }
+      check("...but not a spectator", following === 0, `${following} ticks`);
+      T.player.gameMode = "Survival";
+    } else if (CASE === "pet") {
+      // Java v1.8.6: the tamed spider goes for whatever its creative owner punches
+      const { world } = await import("@minecraft/server");
+      const dimension = world.getDimension("minecraft:overworld");
+      const mob = (x, z, type = "minecraft:pig") => dimension.spawnEntity(type, { x, y: F, z });
+      const hp = (e) => e.getComponent("minecraft:health").currentValue;
+      const fights = (s, ticks, until = () => false) => { let n = 0; for (let t = 0; t < ticks && !until(); t++) { T.tick(1); if (s.ai.isFighting()) n++; } return n; };
+      T.player.gameMode = "Creative";
+      const s = spawnHere();
+      T.tick(2);
+      T.interact(s.entity, "arachno:spider_tamer");
+      T.tick(2);
+      check("tamed by you: you are its owner", s.tamed && s.ownerId === T.player.id);
+      const pig = mob(20.5, 0.5);
+      T.punch(pig);
+      let n = fights(s, 200, () => hp(pig) <= 0);
+      check("it goes for the mob its creative owner punched, and kills it",
+        n > 0 && hp(pig) <= 0 && T.log.some((l) => /^hurt minecraft:pig by 12\.00 \(entityAttack\)/.test(l)), `fought ${n} ticks, pig hp ${hp(pig)}`);
+      T.tick(30);
+      check("...then goes back to following its owner", !s.ai.isFighting() && (s.ai.isChasing() || s.ai.mode === "ALERT"), `mode ${s.ai.mode}`);
+      const pig2 = mob(20.5, 6.5);
+      T.player.gameMode = "Survival";
+      T.punch(pig2);
+      n = fights(s, 120);
+      check("no orders while the owner is in SURVIVAL", n === 0 && hp(pig2) > 0, `fought ${n} ticks`);
+      T.player.gameMode = "Creative";
+      const stranger = { id: "p2", typeId: "minecraft:player", getGameMode: () => "Creative", location: { x: 2, y: F, z: 2 } };
+      T.punch(pig2, stranger);
+      n = fights(s, 100);
+      check("another creative player's punch is not an order", n === 0 && hp(pig2) > 0, `fought ${n} ticks`);
+      T.player.location = { x: s.body.position.x, y: F, z: s.body.position.z };
+      T.interact(s.entity, null);
+      T.tick(2);   // mounting runs in system.run: next tick
+      check("climbed on", s.currentRider() === T.player);
+      T.punch(pig2);
+      n = fights(s, 60);
+      s.entity.getComponent("minecraft:rideable").ejectRider(T.player);
+      n += fights(s, 80);
+      check("no fight while ridden, nor after getting off for a punch thrown while riding", n === 0 && hp(pig2) > 0, `fought ${n} ticks`);
+      T.punch(stranger);
+      T.punch(live("arachno:leg")[0]);
+      n = fights(s, 80);
+      check("punching a player, or one of its own legs, is not an order", n === 0, `fought ${n} ticks`);
+      // a poison pet fights its own way: rear up, lunge, venomous bite
+      const v = spawnHere("poison");
+      T.tick(2);
+      T.interact(v.entity, "arachno:spider_tamer");
+      T.tick(2);
+      const pig3 = mob(v.body.position.x + 12, v.body.position.z);
+      T.punch(pig3);
+      let lunged = false;
+      for (let t = 0; t < 400 && hp(pig3) > 0; t++) { T.tick(1); if (v.body.isLunging) lunged = true; }
+      check("a tamed POISON spider lunges at the mob and bites it to death", hp(pig3) <= 0 && lunged, `pig hp ${hp(pig3)}, lunged ${lunged}`);
+      // an untamed spider takes no orders
+      const u = spawnHere();
+      T.tick(2);
+      const pig4 = mob(u.body.position.x + 12, u.body.position.z);
+      T.punch(pig4);
+      n = fights(u, 120);
+      check("an untamed spider takes no orders", n === 0 && hp(pig4) > 0, `fought ${n} ticks`);
+      T.player.gameMode = "Survival";
+    } else if (CASE === "variants") {
+      const egg = () => {
+        const e = new T.MockEntity("arachno:spider", { x: 3.5, y: F, z: 3.5 }, T.dim);
+        for (const fn of T.after.entitySpawn.subs) fn({ entity: e, cause: "Spawned" });
+        T.tick(1);
+        const c = spiders().find((x) => x.entity === e);
+        return c ? c.variant : "none";
+      };
+      setConfig("hunterVariantChance", 1);
+      check("hunterVariantChance 1: the egg makes a hunter", egg() === "hunter");
+      setConfig("hunterVariantChance", 0); setConfig("poisonVariantChance", 1);
+      check("poisonVariantChance 1: poison", egg() === "poison");
+      setConfig("poisonVariantChance", 0); setConfig("camoVariantChance", 1);
+      check("camoVariantChance 1: camo", egg() === "camo");
+      setConfig("camoVariantChance", 0);
+      check("all chances 0: netherite", egg() === "netherite");
+      setConfig("hunterVariantChance", 1); setConfig("poisonVariantChance", 1);
+      check("hunter is rolled first", egg() === "hunter");
     } else if (CASE === "camo") {
       // The user's test floor: stripes of grass, light-blue stained glass, lapis, coal and sand.
       const stripes = ["grass_block", "light_blue_stained_glass", "lapis_block", "coal_block", "sand"];
@@ -178,6 +1182,69 @@
       const n = spawnHere();
       T.tick(20);
       check("netherite legs stay netherite", live("arachno:leg").every((e) => e.props["arachno:tex"] === 0));
+    } else if (CASE === "snow") {
+      // A snowy biome: grass under thin snow layers (feet sink through them to the grass top), then
+      // full snow blocks, then powder snow over grass. Every leg standing in any of it must be white.
+      for (let x = -40; x <= 80; x++) for (let z = -20; z <= 20; z++) {
+        if (x >= 31 && x <= 45) { T.set(x, F - 1, z, "snow"); continue; }
+        T.set(x, F - 1, z, "grass_block");
+        if (x <= 30) T.set(x, F, z, "snow_layer");
+        else if (x >= 46 && x <= 60) T.set(x, F, z, "powder_snow");
+      }
+      const { camoFor } = await import("/camo.js");
+      const white = new Set([camoFor("snow_layer").tex, camoFor("snow").tex, camoFor("powder_snow").tex]);
+      const s = spawnHere("camo");
+      const n0 = T.log.length;
+      let ticks = 0, green = 0;
+      const seenX = { layer: 0, block: 0, powder: 0 };
+      for (let t = 0; t < 320; t++) {
+        T.player.location = { x: 0.5 + t * 0.2, y: F, z: 0.5 };
+        T.tick(1);
+        if (!s.body.legTex) continue;
+        s.body.legs.forEach((leg, i) => {
+          if (!leg.isGrounded()) return;
+          const fx = Math.floor(leg.endEffector.x);
+          if (fx > 60) return;
+          ticks++;
+          seenX[fx <= 30 ? "layer" : fx <= 45 ? "block" : "powder"]++;
+          if (!white.has(s.body.legTex[i])) green++;
+        });
+      }
+      check("every planted leg in snow is white (layers, blocks, powder)", ticks > 400 && green === 0,
+        `${green} not white of ${ticks} leg-ticks (on layers ${seenX.layer}, snow blocks ${seenX.block}, powder ${seenX.powder})`);
+      check("snow paints the snow texture", TEXTURES[camoFor("snow_layer").tex] === "textures/blocks/snow", TEXTURES[camoFor("snow_layer").tex]);
+      check("footsteps crunch like snow", T.log.slice(n0).some((l) => l === "sound step.snow"));
+    } else if (CASE === "snowhills") {
+      // Real snowy ground is BUMPY: rolling hills of grass, every column under a snow layer. Watch
+      // EVERY leg every tick - planted, stepping or lifting - for a single frame that isn't white.
+      const height = (x, z) => Math.round(1.6 * Math.sin(x / 4.3) + 1.2 * Math.sin(z / 3.1 + x / 7));
+      for (let x = -40; x <= 90; x++) for (let z = -20; z <= 20; z++) {
+        const h = F + height(x, z);
+        for (let y = h - 4; y < h; y++) T.set(x, y, z, y === h - 1 ? "grass_block" : "dirt");
+        T.set(x, h, z, "snow_layer");
+        for (let y = h + 1; y < F + 4; y++) T.set(x, y, z, "air");   // the stub's stone floor would bury the valleys
+      }
+      const { camoFor, blockUnder } = await import("/camo.js");
+      const white = new Set([camoFor("snow_layer").tex, camoFor("snow").tex]);
+      const s = spawnHere("camo");
+      let ticks = 0, flashes = 0, flashLegs = new Set();
+      const under = new Map();
+      for (let t = 0; t < 400; t++) {
+        const px = 0.5 + t * 0.2;
+        T.player.location = { x: px, y: F + height(Math.floor(px), 0) + 0.2, z: 0.5 };
+        T.tick(1);
+        if (!s.body.legTex) continue;
+        s.body.legs.forEach((leg, i) => {
+          ticks++;
+          if (!white.has(s.body.legTex[i])) {
+            flashes++; flashLegs.add(i);
+            const id = blockUnder(s.level.blocks, leg.endEffector);
+            under.set(id, (under.get(id) || 0) + 1);
+          }
+        });
+      }
+      check("on snowy hills no leg ever shows the ground under the snow", ticks > 1000 && flashes === 0,
+        `${flashes} non-white leg-frames of ${ticks} (legs ${[...flashLegs].join(",")}; read ${[...under].map(([k, v]) => `${k} x${v}`).join(", ")})`);
     } else if (CASE === "onlyone") {
       const a = spawnHere();
       T.tick(2);
@@ -222,17 +1289,43 @@
       r = T.command("arachno:spiderconfig", "chasedistance", "100");
       T.tick(1);
       check("/spiderconfig chaseDistance 100", r.status === 0 && CONFIG.chaseDistance === 100, r.message);
+      const { world } = await import("@minecraft/server");
+      check("saved with the world", JSON.parse(world.getDynamicProperty("arachno:config")).chaseDistance === 100);
+      r = T.command("arachno:spiderconfig", "netheriteLegs", "3");
+      T.tick(1);
+      check("/spiderconfig netheriteLegs 3 (the in-game syntax error)", r.status === 0 && CONFIG.netheriteLegs === 3, r.message);
+      r = T.command("arachno:spiderconfig", "enragedSpeedMultiplier", "2.5");
+      T.tick(1);
+      check("a decimal value", r.status === 0 && CONFIG.enragedSpeedMultiplier === 2.5, r.message);
+      r = T.command("arachno:spiderconfig", "netheriteLegs", "3.6");
+      T.tick(1);
+      check("whole-number settings round, and say so", r.status === 0 && CONFIG.netheriteLegs === 4 && r.message.includes("set to 4"), `${r.message} -> ${CONFIG.netheriteLegs}`);
       r = T.command("arachno:spiderconfig", "chasedistance");
       check("/spiderconfig chaseDistance (show)", r.status === 0 && r.message.includes("= 100"), r.message);
       r = T.command("arachno:spiderconfig", "chasedistance", "999");
       check("out-of-range value refused", r.status === 1, r.message);
-      r = T.command("arachno:spiderconfig", "hostileonlyatnight", "true");
+      // EVERY numeric setting takes a typed number; every on/off setting takes /spidertoggle true|false
+      const { SPEC } = await import("/config.js");
+      const numeric = Object.keys(SPEC).filter((k) => typeof SPEC[k][0] !== "boolean");
+      const switches = Object.keys(SPEC).filter((k) => typeof SPEC[k][0] === "boolean");
+      const refusedNum = numeric.filter((k) => T.command("arachno:spiderconfig", k, String(SPEC[k][0])).status !== 0);
+      check(`all ${numeric.length} numeric settings accept a typed number`, refusedNum.length === 0, refusedNum.join(",") || "none refused");
       T.tick(1);
-      check("boolean setting", CONFIG.hostileOnlyAtNight === true, r.message);
+      const refusedSw = switches.filter((k) => T.command("arachno:spidertoggle", k, String(SPEC[k][0])).status !== 0);
+      check(`all ${switches.length} on/off settings accept /spidertoggle true|false`, refusedSw.length === 0, refusedSw.join(",") || "none refused");
+      T.tick(1);
+      r = T.command("arachno:spidertoggle", "hostileonlyatnight", "true");
+      T.tick(1);
+      check("/spidertoggle hostileOnlyAtNight true", r.status === 0 && CONFIG.hostileOnlyAtNight === true, r.message);
+      r = T.command("arachno:spiderconfig", "hostileonlyatnight", "0");
+      T.tick(1);
+      check("/spiderconfig takes 1/0 for an on/off setting too", r.status === 0 && CONFIG.hostileOnlyAtNight === false, r.message);
+      r = T.command("arachno:spidertoggle", "chasedistance", "true");
+      check("/spidertoggle only lists on/off settings", r.status === 1, r.message);
+      r = T.command("arachno:spiderconfig", "permadeath");
+      check("showing an on/off setting points to /spidertoggle", r.status === 0 && r.message.includes("/spidertoggle"), r.message);
       r = T.command("arachno:spiderconfig", "list");
       check("/spiderconfig list", r.status === 0 && r.message.split("\n").length > 40);
-      const { world } = await import("@minecraft/server");
-      check("saved with the world", JSON.parse(world.getDynamicProperty("arachno:config")).chaseDistance === 100);
     } else if (CASE === "groom") {
       setConfig("enableWandering", false);
       setConfig("groomingChance", 1);

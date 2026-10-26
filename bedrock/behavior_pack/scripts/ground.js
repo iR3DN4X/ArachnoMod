@@ -65,17 +65,22 @@ export function findSafeY(world, x, z) {
   return null;
 }
 
-/** DIMENSION-AWARE safe ground at (x, z): heightmap scan, or around refY under a ceiling. */
-export function groundYAt(world, x, z, refY) {
-  return world.hasCeiling ? findSafeYNear(world, x, z, refY) : findSafeY(world, x, z);
+/** DIMENSION-AWARE safe ground at (x, z): heightmap scan, or around refY under a ceiling.
+ *  `ceilingMargin`: how far below the build limit a ceiling dimension's scan starts. */
+export function groundYAt(world, x, z, refY, ceilingMargin = 2) {
+  return world.hasCeiling ? findSafeYNear(world, x, z, refY, ceilingMargin) : findSafeY(world, x, z);
 }
 
+/** A spawn spot is never up in the bedrock ceiling band (the Nether's runs y 123-127 under a build
+ *  limit of 128): an air pocket in there is no place to put a spider. */
+export const SPAWN_CEILING_MARGIN = 9;
+
 /** Ceiling-dimension variant: scan DOWN from refY + 16 to refY - spawnMaxVerticalSearch. */
-export function findSafeYNear(world, x, z, refY) {
+export function findSafeYNear(world, x, z, refY, ceilingMargin = 2) {
   const blockX = floor(x);
   const blockZ = floor(z);
   if (!world.hasChunk(blockX, blockZ, refY)) return null;
-  let y = Math.min(floor(refY) + 16, world.maxY - 2);
+  let y = Math.min(floor(refY) + 16, world.maxY - ceilingMargin);
   const bottomLimit = Math.max(floor(refY) - CONFIG.spawnMaxVerticalSearch, world.minY);
   while (y > bottomLimit) {
     if (isSolidDryGround(world, blockX, y, blockZ)) {
